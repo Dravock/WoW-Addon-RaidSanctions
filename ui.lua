@@ -332,18 +332,107 @@ function UI:RefreshPlayerList()
         return
     end
     
+    -- Separate players by guild membership
+    local guildMembers = {}
+    local randomPlayers = {}
+    
+    for playerName, playerData in pairs(session.players) do
+        if self:IsPlayerInGuild(playerName) then
+            table.insert(guildMembers, {name = playerName, data = playerData})
+        else
+            table.insert(randomPlayers, {name = playerName, data = playerData})
+        end
+    end
+    
+    -- Sort both lists by penalty amount (highest first)
+    local sortFunction = function(a, b)
+        return (a.data.total or 0) > (b.data.total or 0)
+    end
+    table.sort(guildMembers, sortFunction)
+    table.sort(randomPlayers, sortFunction)
+    
     local yOffset = 0
     local contentHeight = 0
     
-    for playerName, playerData in pairs(session.players) do
-        local row = self:CreatePlayerRow(playerName, playerData, yOffset)
-        table.insert(playerRows, row)
+    -- Add Guild Members section
+    if #guildMembers > 0 then
+        local guildHeader = self:CreateSectionHeader("Guild Members (" .. #guildMembers .. ")", yOffset)
+        table.insert(playerRows, guildHeader)
         yOffset = yOffset - ROW_HEIGHT
         contentHeight = contentHeight + ROW_HEIGHT
+        
+        for _, player in ipairs(guildMembers) do
+            local row = self:CreatePlayerRow(player.name, player.data, yOffset)
+            table.insert(playerRows, row)
+            yOffset = yOffset - ROW_HEIGHT
+            contentHeight = contentHeight + ROW_HEIGHT
+        end
+        
+        -- Add spacing between sections
+        yOffset = yOffset - 10
+        contentHeight = contentHeight + 10
+    end
+    
+    -- Add Random Players section
+    if #randomPlayers > 0 then
+        local randomHeader = self:CreateSectionHeader("Random Players (" .. #randomPlayers .. ")", yOffset)
+        table.insert(playerRows, randomHeader)
+        yOffset = yOffset - ROW_HEIGHT
+        contentHeight = contentHeight + ROW_HEIGHT
+        
+        for _, player in ipairs(randomPlayers) do
+            local row = self:CreatePlayerRow(player.name, player.data, yOffset)
+            table.insert(playerRows, row)
+            yOffset = yOffset - ROW_HEIGHT
+            contentHeight = contentHeight + ROW_HEIGHT
+        end
     end
     
     -- Adjust content frame height
     mainFrame.contentFrame:SetHeight(math.max(contentHeight, mainFrame.scrollFrame:GetHeight()))
+end
+
+function UI:IsPlayerInGuild(playerName)
+    -- Check if player is in the same guild as the current player
+    if not IsInGuild() then
+        return false -- Player is not in a guild
+    end
+    
+    -- Get number of guild members
+    local numGuildMembers = GetNumGuildMembers()
+    
+    -- Search through guild roster
+    for i = 1, numGuildMembers do
+        local name = GetGuildRosterInfo(i)
+        if name then
+            -- Remove realm name if present (handle cross-realm players)
+            local guildMemberName = name:match("([^-]+)")
+            if guildMemberName == playerName then
+                return true
+            end
+        end
+    end
+    
+    return false
+end
+
+function UI:CreateSectionHeader(title, yOffset)
+    local header = CreateFrame("Frame", nil, mainFrame.contentFrame)
+    header:SetSize(FRAME_WIDTH - 50, ROW_HEIGHT)
+    header:SetPoint("TOPLEFT", 0, yOffset)
+    
+    -- Background for section header
+    local bg = header:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0.3, 0.3, 0.3, 0.6)
+    
+    -- Title text
+    local titleLabel = header:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    titleLabel:SetPoint("LEFT", 10, 0)
+    titleLabel:SetText(title)
+    titleLabel:SetTextColor(1, 0.8, 0) -- Gold color
+    
+    return header
 end
 
 function UI:CreatePlayerRow(playerName, playerData, yOffset)
