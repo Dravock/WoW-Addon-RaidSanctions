@@ -234,13 +234,36 @@ function Logic:AddPlayerManually(playerName)
 end
 
 function Logic:FormatGold(amount)
-    if amount >= 10000 then
-        return format("%.0fg", amount / 10000)
-    elseif amount >= 100 then
-        return format("%.0fs", amount / 100)
-    else
-        return format("%dc", amount)
+    local gold = math.floor(amount / 10000)
+    local silver = math.floor((amount % 10000) / 100)
+    local copper = amount % 100
+    
+    local result = ""
+    
+    if gold > 0 then
+        result = result .. gold .. "g"
     end
+    
+    if silver > 0 then
+        if result ~= "" then
+            result = result .. " "
+        end
+        result = result .. silver .. "s"
+    end
+    
+    if copper > 0 then
+        if result ~= "" then
+            result = result .. " "
+        end
+        result = result .. copper .. "c"
+    end
+    
+    -- Falls alles 0 ist
+    if result == "" then
+        result = "0c"
+    end
+    
+    return result
 end
 
 function Logic:GetPenalties()

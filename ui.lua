@@ -14,16 +14,18 @@ local format = string.format
 local pairs, ipairs = pairs, ipairs
 
 -- UI-Konstanten
-local FRAME_WIDTH = 700
-local FRAME_HEIGHT = 600
+local FRAME_WIDTH = 800
+local FRAME_HEIGHT = 700  -- Mehr Höhe für Button-Leiste unten
 local ROW_HEIGHT = 30
 local BUTTON_WIDTH = 80
-local BUTTON_HEIGHT = 20
+local BUTTON_HEIGHT = 25
+local BOTTOM_PANEL_HEIGHT = 80  -- Höhe für Button-Leiste
 
 -- Lokale UI-Variablen
 local mainFrame = nil
 local playerRows = {}
 local headerButtons = {}
+local selectedPlayer = nil
 
 function UI:Initialize()
     if mainFrame then
@@ -33,6 +35,7 @@ function UI:Initialize()
     self:CreateMainFrame()
     self:CreateHeader()
     self:CreateScrollFrame()
+    self:CreateBottomPanel()
     self:SetupEventHandlers()
 end
 
@@ -114,29 +117,33 @@ function UI:CreateHeader()
     nameHeader:SetText("Spieler")
     nameHeader:SetTextColor(0.8, 0.8, 0.8)
     
-    -- Penalty-Headers dynamisch erstellen
+    -- Penalty-Headers dynamisch erstellen (jetzt als Counter)
     local xOffset = 150
     for reason, amount in pairs(Logic:GetPenalties()) do
         local header = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         header:SetPoint("LEFT", xOffset, 0)
-        header:SetText(reason)
+        header:SetText(reason) -- Nur Penalty-Name, Counter kommen in die Zeilen
         header:SetTextColor(0.8, 0.8, 0.8)
+        header:SetWidth(BUTTON_WIDTH) -- Breite setzen für Zentrierung
+        header:SetJustifyH("CENTER") -- Zentrierte Ausrichtung
         headerButtons[reason] = header
         xOffset = xOffset + (BUTTON_WIDTH + 15)
     end
     
     -- Gesamt-Header
     local totalHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    totalHeader:SetPoint("RIGHT", -20, 0)
+    totalHeader:SetPoint("RIGHT", -10, 0)
     totalHeader:SetText("Gesamt")
     totalHeader:SetTextColor(0.8, 0.8, 0.8)
+    totalHeader:SetWidth(120) -- Breite setzen für Zentrierung
+    totalHeader:SetJustifyH("CENTER") -- Zentrierte Ausrichtung
 end
 
 function UI:CreateScrollFrame()
-    -- Scroll-Container für Spielerliste
+    -- Scroll-Container für Spielerliste (jetzt mit Platz für Bottom-Panel)
     local scrollFrame = CreateFrame("ScrollFrame", nil, mainFrame, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", 10, -80)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -30, 40)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -30, BOTTOM_PANEL_HEIGHT + 10) -- Platz für Button-Panel
     
     local contentFrame = CreateFrame("Frame", nil, scrollFrame)
     contentFrame:SetSize(FRAME_WIDTH - 50, 1) -- Höhe wird dynamisch angepasst
@@ -144,6 +151,66 @@ function UI:CreateScrollFrame()
     
     mainFrame.scrollFrame = scrollFrame
     mainFrame.contentFrame = contentFrame
+end
+
+function UI:CreateBottomPanel()
+    -- Bottom-Panel für Penalty-Buttons
+    local bottomPanel = CreateFrame("Frame", nil, mainFrame, "BackdropTemplate")
+    bottomPanel:SetSize(FRAME_WIDTH - 20, BOTTOM_PANEL_HEIGHT)
+    bottomPanel:SetPoint("BOTTOMLEFT", 10, 10)
+    
+    -- Panel-Hintergrund
+    bottomPanel:SetBackdrop({
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true,
+        tileSize = 16,
+        edgeSize = 12,
+        insets = { left = 2, right = 2, top = 2, bottom = 2 }
+    })
+    bottomPanel:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
+    bottomPanel:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    
+    -- "Aktionen:" Label
+    local actionsLabel = bottomPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    actionsLabel:SetPoint("TOPLEFT", 10, -8)
+    actionsLabel:SetText("Aktionen:")
+    actionsLabel:SetTextColor(1, 0.8, 0)
+    
+    -- Penalty-Buttons erstellen
+    local xOffset = 10
+    local yOffset = -30
+    for reason, amount in pairs(Logic:GetPenalties()) do
+        local button = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
+        button:SetSize(140, BUTTON_HEIGHT) -- Deutlich breitere Buttons
+        button:SetPoint("TOPLEFT", xOffset, yOffset)
+        button:SetText(reason .. " (" .. Logic:FormatGold(amount) .. ")")
+        
+        -- Click-Handler für aktuell ausgewählten Spieler
+        button:SetScript("OnClick", function()
+            UI:ApplyPenaltyToSelectedPlayer(reason, amount)
+        end)
+        
+        -- Tooltip
+        button:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText("Strafe anwenden: " .. reason)
+            GameTooltip:AddLine("Betrag: " .. Logic:FormatGold(amount))
+            GameTooltip:AddLine("Klicke um diese Strafe dem ausgewählten Spieler zu geben.", 1, 1, 1)
+            GameTooltip:Show()
+        end)
+        button:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        
+        xOffset = xOffset + 150 -- Mehr Abstand zwischen Buttons
+        if xOffset > FRAME_WIDTH - 160 then -- Nächste Zeile
+            xOffset = 10
+            yOffset = yOffset - 30
+        end
+    end
+    
+    mainFrame.bottomPanel = bottomPanel
 end
 
 function UI:SetupEventHandlers()
@@ -165,7 +232,7 @@ function UI:SetupEventHandlers()
 end
 
 function UI:RefreshPlayerList()
-    if not mainFrame or not mainFrame:IsShown() then
+    if not mainFrame then
         return
     end
     
@@ -196,16 +263,28 @@ function UI:RefreshPlayerList()
 end
 
 function UI:CreatePlayerRow(playerName, playerData, yOffset)
-    local row = CreateFrame("Frame", nil, mainFrame.contentFrame)
+    local row = CreateFrame("Button", nil, mainFrame.contentFrame) -- Button für Auswahl
     row:SetSize(FRAME_WIDTH - 50, ROW_HEIGHT)
     row:SetPoint("TOPLEFT", 0, yOffset)
     
     -- Hintergrund für bessere Lesbarkeit
+    local bg = row:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
     if math.floor(math.abs(yOffset) / ROW_HEIGHT) % 2 == 0 then
-        local bg = row:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
         bg:SetColorTexture(0.2, 0.2, 0.2, 0.3)
+    else
+        bg:SetColorTexture(0.1, 0.1, 0.1, 0.2)
     end
+    
+    -- Auswahlhintergrund
+    local selectedBg = row:CreateTexture(nil, "HIGHLIGHT")
+    selectedBg:SetAllPoints()
+    selectedBg:SetColorTexture(0.3, 0.6, 1, 0.3)
+    
+    -- Click-Handler für Spielerauswahl
+    row:SetScript("OnClick", function()
+        UI:SelectPlayer(playerName)
+    end)
     
     -- Spielername mit Klassenfarbe
     local nameLabel = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -220,37 +299,46 @@ function UI:CreatePlayerRow(playerName, playerData, yOffset)
         end
     end
     
-    -- Penalty-Buttons
+    -- Penalty-Counter (statt Buttons)
     local xOffset = 150
     for reason, amount in pairs(Logic:GetPenalties()) do
-        local button = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-        button:SetSize(BUTTON_WIDTH, BUTTON_HEIGHT)
-        button:SetPoint("LEFT", xOffset, 0)
-        button:SetText(Logic:FormatGold(amount))
+        local counter = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        counter:SetPoint("LEFT", xOffset, 0)
+        counter:SetWidth(BUTTON_WIDTH)
+        counter:SetJustifyH("CENTER")
         
-        -- Click-Handler
-        button:SetScript("OnClick", function()
-            Logic:ApplyPenalty(playerName, reason, amount)
-            UI:RefreshPlayerList() -- UI aktualisieren
-        end)
+        -- Counter-Wert berechnen
+        local count = 0
+        if playerData.penalties then
+            for _, penalty in ipairs(playerData.penalties) do
+                if penalty.reason == reason then
+                    count = count + 1
+                end
+            end
+        end
         
-        -- Tooltip
-        button:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_TOP")
-            GameTooltip:SetText(reason .. ": " .. Logic:FormatGold(amount))
-            GameTooltip:Show()
-        end)
-        button:SetScript("OnLeave", function()
-            GameTooltip:Hide()
-        end)
+        counter:SetText(tostring(count))
+        
+        -- Farbe je nach Anzahl
+        if count > 3 then
+            counter:SetTextColor(1, 0.2, 0.2) -- Rot
+        elseif count > 1 then
+            counter:SetTextColor(1, 0.8, 0.2) -- Orange
+        elseif count > 0 then
+            counter:SetTextColor(1, 1, 0.2) -- Gelb
+        else
+            counter:SetTextColor(0.8, 0.8, 0.8) -- Grau
+        end
         
         xOffset = xOffset + (BUTTON_WIDTH + 15)
     end
     
     -- Gesamt-Anzeige
     local totalLabel = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    totalLabel:SetPoint("RIGHT", -20, 0)
+    totalLabel:SetPoint("RIGHT", -10, 0)
     totalLabel:SetText(Logic:FormatGold(playerData.total))
+    totalLabel:SetWidth(120)
+    totalLabel:SetJustifyH("RIGHT")
     
     -- Farbe je nach Höhe der Strafe
     if playerData.total > 50000 then -- > 5g
@@ -260,6 +348,9 @@ function UI:CreatePlayerRow(playerName, playerData, yOffset)
     else
         totalLabel:SetTextColor(0.8, 0.8, 0.8) -- Grau
     end
+    
+    -- Row speichern für Auswahl-System
+    row.playerName = playerName
     
     return row
 end
@@ -281,6 +372,34 @@ function UI:AddPlayerManually(playerName)
     end
 end
 
+function UI:SelectPlayer(playerName)
+    selectedPlayer = playerName
+    print("Spieler ausgewählt: " .. playerName)
+    
+    -- Visuelle Aktualisierung der Auswahl
+    for _, row in ipairs(playerRows) do
+        if row.playerName == playerName then
+            -- Ausgewählte Zeile hervorheben
+            local bg = row:CreateTexture(nil, "BACKGROUND")
+            bg:SetAllPoints()
+            bg:SetColorTexture(0.2, 0.5, 1, 0.4)
+        end
+    end
+end
+
+function UI:ApplyPenaltyToSelectedPlayer(reason, amount)
+    if not selectedPlayer then
+        print("Kein Spieler ausgewählt! Klicke zuerst auf einen Spieler in der Liste.")
+        return
+    end
+    
+    if Logic:ApplyPenalty(selectedPlayer, reason, amount) then
+        self:RefreshPlayerList()
+    else
+        print("Fehler beim Anwenden der Strafe.")
+    end
+end
+
 function UI:Toggle()
     if not mainFrame then
         self:Initialize()
@@ -291,7 +410,7 @@ function UI:Toggle()
     else
         -- Daten aktualisieren vor dem Anzeigen
         Logic:UpdateRaidMembers()
-        self:RefreshPlayerList()
+        self:RefreshPlayerList() -- Liste aktualisieren vor dem Anzeigen
         mainFrame:Show()
     end
 end
@@ -302,7 +421,7 @@ function UI:Show()
     end
     
     Logic:UpdateRaidMembers()
-    self:RefreshPlayerList()
+    self:RefreshPlayerList() -- Liste aktualisieren vor dem Anzeigen
     mainFrame:Show()
 end
 
