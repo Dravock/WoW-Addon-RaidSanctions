@@ -1058,6 +1058,20 @@ function UI:SyncSessionData()
     
     print("DEBUG: Data serialized successfully, length: " .. string.len(dataString))
     
+    -- Debug: Test deserialization to ensure data is valid
+    print("DEBUG: Testing deserialization...")
+    local testData = self:DeserializeSyncData(dataString)
+    if testData then
+        print("DEBUG: Deserialization test successful")
+    else
+        print("ERROR: Deserialization test failed - invalid serialized data!")
+        return
+    end
+    
+    -- Debug: Show first 200 characters of the message
+    local previewLength = math.min(200, string.len(dataString))
+    print("DEBUG: Message preview (first " .. previewLength .. " chars): " .. string.sub(dataString, 1, previewLength))
+    
     -- Check message length (WoW has a limit)
     if string.len(dataString) > 4000 then
         print("DEBUG: WARNING - Message is very long (" .. string.len(dataString) .. " characters), may fail to send")
@@ -1066,17 +1080,35 @@ function UI:SyncSessionData()
     -- Send via addon communication
     local channel = IsInRaid() and "RAID" or "PARTY"
     print("DEBUG: Sending to channel: " .. channel)
+    print("DEBUG: Channel verification - IsInRaid: " .. tostring(IsInRaid()) .. ", IsInGroup: " .. tostring(IsInGroup()))
+    
+    -- Additional validation before sending
+    if not dataString or dataString == "" then
+        print("ERROR: Empty data string, cannot send")
+        return
+    end
+    
+    if not IsInRaid() and not IsInGroup() then
+        print("ERROR: Not in a raid or group, cannot send addon message")
+        return
+    end
     
     local success = C_ChatInfo.SendAddonMessage("RaidSanctions", dataString, channel)
     print("DEBUG: SendAddonMessage result: " .. tostring(success))
     
-    if success and success ~= 0 then
+    -- In WoW, SendAddonMessage returns true on success, false on failure
+    if success then
         print("Complete data synchronized to " .. (IsInRaid() and "raid" or "party") .. " members (Session + Penalties + Season Stats).")
     else
-        print("ERROR: Failed to send sync message (result: " .. tostring(success) .. ")")
+        print("ERROR: Failed to send sync message - SendAddonMessage returned false")
         if string.len(dataString) > 4000 then
             print("ERROR: Message too long for WoW addon communication (" .. string.len(dataString) .. " chars)")
         end
+        print("ERROR: Possible causes:")
+        print("  - Not registered for addon communication")
+        print("  - Invalid channel")
+        print("  - Message too long")
+        print("  - Network issues")
     end
 end
 
@@ -1110,10 +1142,18 @@ function UI:SerializeSyncData(data)
         print("DEBUG: Serializing session data...")
         serialized = serialized .. "SESSION:"
         local playerCount = 0
+        local totalPlayersToSync = 0
+        
+        -- First, count total players
+        for _ in pairs(data.sessionData.players) do
+            totalPlayersToSync = totalPlayersToSync + 1
+        end
+        print("DEBUG: Total players to serialize: " .. totalPlayersToSync)
+        
         for playerName, playerData in pairs(data.sessionData.players) do
             playerCount = playerCount + 1
-            print("DEBUG: Serializing player " .. playerName .. " with total: " .. tostring(playerData.total))
-            serialized = serialized .. playerName .. "=" .. (playerData.total or 0) .. ";"
+            print("DEBUG: [" .. playerCount .. "/" .. totalPlayersToSync .. "] Serializing player: " .. playerName .. " with total: " .. tostring(playerData.total))
+            serialized = serialized .. playerName .. "=" .. (playerData.total or 0)
             
             -- Serialize penalties for this player
             if playerData.penalties and #playerData.penalties > 0 then
@@ -1121,12 +1161,15 @@ function UI:SerializeSyncData(data)
                 for _, penalty in ipairs(playerData.penalties) do
                     table.insert(penaltyStrings, penalty.reason .. ":" .. penalty.amount)
                 end
-                serialized = serialized .. table.concat(penaltyStrings, ",")
+                serialized = serialized .. ";" .. table.concat(penaltyStrings, ",")
+                print("DEBUG: Added " .. #penaltyStrings .. " penalties for " .. playerName)
+            else
+                print("DEBUG: No penalties for " .. playerName)
             end
             serialized = serialized .. "#"
         end
         serialized = serialized .. "|"
-        print("DEBUG: Session data serialized (" .. playerCount .. " players)")
+        print("DEBUG: Session data serialized successfully (" .. playerCount .. " players out of " .. totalPlayersToSync .. ")")
         
         -- Serialize season data
         if data.seasonData and data.seasonData.players then
@@ -1210,14 +1253,28 @@ function UI:DeserializeSyncData(dataString)
         local sessionSection = dataString:match("SESSION:([^|]+)")
         if sessionSection then
             print("DEBUG: Found session section, length: " .. string.len(sessionSection))
+            print("DEBUG: Raw session section: " .. sessionSection)
+            
+            local playersParsed = 0
+            local totalBlocks = 0
+            
+            -- Count total blocks first
+            for _ in sessionSection:gmatch("([^#]+)") do
+                totalBlocks = totalBlocks + 1
+            end
+            print("DEBUG: Total player blocks to parse: " .. totalBlocks)
+            
             for playerBlock in sessionSection:gmatch("([^#]+)") do
                 if playerBlock ~= "" then
+                    playersParsed = playersParsed + 1
+                    print("DEBUG: [" .. playersParsed .. "/" .. totalBlocks .. "] Processing block: '" .. playerBlock .. "'")
+                    
                     local playerName, playerInfo = playerBlock:match("([^=]+)=(.+)")
                     if playerName and playerInfo then
                         local total = tonumber(playerInfo:match("^(%d+)"))
                         local penalties = {}
                         
-                        print("DEBUG: Processing player: " .. playerName .. ", total: " .. tostring(total))
+                        print("DEBUG: Successfully parsed player: '" .. playerName .. "' with total: " .. tostring(total))
                         
                         -- Parse penalties (if any)
                         local penaltiesSection = playerInfo:match(";(.+)")
@@ -1245,10 +1302,17 @@ function UI:DeserializeSyncData(dataString)
                             penalties = penalties,
                             class = nil -- Will be updated when player joins
                         }
-                        print("DEBUG: Added session player: " .. playerName .. " with " .. #penalties .. " penalties")
+                        print("DEBUG: Successfully added session player: " .. playerName .. " with " .. #penalties .. " penalties")
+                    else
+                        print("DEBUG: ERROR - Failed to parse player block: '" .. playerBlock .. "'")
+                        print("DEBUG: playerName: " .. tostring(playerName) .. ", playerInfo: " .. tostring(playerInfo))
                     end
+                else
+                    print("DEBUG: Skipping empty player block")
                 end
             end
+            
+            print("DEBUG: Session parsing complete - processed " .. playersParsed .. " players")
         else
             print("DEBUG: No session section found")
         end
@@ -1374,6 +1438,19 @@ function UI:ApplySyncData(syncData)
     
     -- 2. Apply session data
     if syncData.sessionData and syncData.sessionData.players then
+        print("DEBUG: Processing session data from sync...")
+        
+        local syncPlayerCount = 0
+        for _ in pairs(syncData.sessionData.players) do
+            syncPlayerCount = syncPlayerCount + 1
+        end
+        print("DEBUG: Received " .. syncPlayerCount .. " players in sync data")
+        
+        -- List all received players
+        for playerName, playerData in pairs(syncData.sessionData.players) do
+            print("DEBUG: Received player: " .. playerName .. " with total: " .. tostring(playerData.total))
+        end
+        
         local currentSession = nil
         if RaidSanctions.Logic and RaidSanctions.Logic.GetCurrentSession then
             currentSession = RaidSanctions.Logic:GetCurrentSession()
@@ -1533,7 +1610,7 @@ function UI:Toggle()
         mainFrame:Hide()
     else
         -- Update data before showing
-        Logic:UpdateRaidMembers()
+        RaidSanctions.Logic:UpdateRaidMembers()
         self:RefreshPlayerList() -- Update list before showing
         mainFrame:Show()
     end
@@ -1544,7 +1621,7 @@ function UI:Show()
         self:Initialize()
     end
     
-    Logic:UpdateRaidMembers()
+    RaidSanctions.Logic:UpdateRaidMembers()
     self:RefreshPlayerList() -- Update list before showing
     mainFrame:Show()
 end
