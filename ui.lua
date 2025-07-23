@@ -1109,17 +1109,24 @@ function UI:SerializeSyncData(data)
         -- Serialize session data
         print("DEBUG: Serializing session data...")
         serialized = serialized .. "SESSION:"
+        local playerCount = 0
         for playerName, playerData in pairs(data.sessionData.players) do
+            playerCount = playerCount + 1
+            print("DEBUG: Serializing player " .. playerName .. " with total: " .. tostring(playerData.total))
             serialized = serialized .. playerName .. "=" .. (playerData.total or 0) .. ";"
-            if playerData.penalties then
+            
+            -- Serialize penalties for this player
+            if playerData.penalties and #playerData.penalties > 0 then
+                local penaltyStrings = {}
                 for _, penalty in ipairs(playerData.penalties) do
-                    serialized = serialized .. penalty.reason .. ":" .. penalty.amount .. "," .. (penalty.uniqueId or "") .. ","
+                    table.insert(penaltyStrings, penalty.reason .. ":" .. penalty.amount)
                 end
+                serialized = serialized .. table.concat(penaltyStrings, ",")
             end
             serialized = serialized .. "#"
         end
         serialized = serialized .. "|"
-        print("DEBUG: Session data serialized")
+        print("DEBUG: Session data serialized (" .. playerCount .. " players)")
         
         -- Serialize season data
         if data.seasonData and data.seasonData.players then
@@ -1217,24 +1224,18 @@ function UI:DeserializeSyncData(dataString)
                         if penaltiesSection then
                             print("DEBUG: Found penalties for " .. playerName .. ": " .. penaltiesSection)
                             -- Split by commas and process penalty pairs
-                            local penaltyData = ""
-                            for char in penaltiesSection:gmatch(".") do
-                                if char == "," then
-                                    if penaltyData ~= "" then
-                                        local reason, amount = penaltyData:match("([^:]+):(%d+)")
-                                        if reason and amount then
-                                            table.insert(penalties, {
-                                                reason = reason,
-                                                amount = tonumber(amount),
-                                                timestamp = timestamp,
-                                                uniqueId = timestamp .. "_" .. math.random(1000, 9999)
-                                            })
-                                            print("DEBUG: Added penalty: " .. reason .. " = " .. amount)
-                                        end
-                                        penaltyData = ""
+                            for penaltyPair in penaltiesSection:gmatch("([^,]+)") do
+                                if penaltyPair ~= "" then
+                                    local reason, amount = penaltyPair:match("([^:]+):(%d+)")
+                                    if reason and amount then
+                                        table.insert(penalties, {
+                                            reason = reason,
+                                            amount = tonumber(amount),
+                                            timestamp = timestamp,
+                                            uniqueId = timestamp .. "_" .. math.random(1000, 9999)
+                                        })
+                                        print("DEBUG: Added penalty: " .. reason .. " = " .. amount)
                                     end
-                                else
-                                    penaltyData = penaltyData .. char
                                 end
                             end
                         end
@@ -1386,40 +1387,31 @@ function UI:ApplySyncData(syncData)
         local updatedPlayers = 0
         
         for playerName, syncPlayerData in pairs(syncData.sessionData.players) do
-            if currentSession.players[playerName] then
-                -- Player exists, merge penalties
-                if not currentSession.players[playerName].penalties then
-                    currentSession.players[playerName].penalties = {}
+            print("DEBUG: Processing synced player: " .. playerName .. " with total: " .. tostring(syncPlayerData.total))
+            
+            -- REPLACE player data completely (don't merge/add)
+            currentSession.players[playerName] = {
+                total = syncPlayerData.total or 0,
+                penalties = {},
+                class = (currentSession.players[playerName] and currentSession.players[playerName].class) or nil
+            }
+            
+            -- Copy penalties from sync data (complete replacement)
+            if syncPlayerData.penalties then
+                for _, penalty in ipairs(syncPlayerData.penalties) do
+                    table.insert(currentSession.players[playerName].penalties, {
+                        reason = penalty.reason,
+                        amount = penalty.amount,
+                        timestamp = penalty.timestamp,
+                        uniqueId = penalty.uniqueId
+                    })
                 end
-                
-                -- Add new penalties from sync data
-                if syncPlayerData.penalties then
-                    for _, penalty in ipairs(syncPlayerData.penalties) do
-                        -- Check if this penalty already exists (by uniqueId if available)
-                        local exists = false
-                        for _, existingPenalty in ipairs(currentSession.players[playerName].penalties) do
-                            if existingPenalty.uniqueId == penalty.uniqueId then
-                                exists = true
-                                break
-                            end
-                        end
-                        
-                        if not exists then
-                            table.insert(currentSession.players[playerName].penalties, penalty)
-                        end
-                    end
-                end
-                
-                -- Recalculate total
-                if RaidSanctions.Logic and RaidSanctions.Logic.RecalculatePlayerTotal then
-                    RaidSanctions.Logic:RecalculatePlayerTotal(playerName)
-                end
-                updatedPlayers = updatedPlayers + 1
+                print("DEBUG: Replaced " .. playerName .. " with " .. #syncPlayerData.penalties .. " penalties, total: " .. tostring(syncPlayerData.total))
             else
-                -- New player, add completely
-                currentSession.players[playerName] = syncPlayerData
-                mergedPlayers = mergedPlayers + 1
+                print("DEBUG: Replaced " .. playerName .. " with no penalties, total: " .. tostring(syncPlayerData.total))
             end
+            
+            mergedPlayers = mergedPlayers + 1
         end
         
         -- Update the session
@@ -1429,8 +1421,9 @@ function UI:ApplySyncData(syncData)
             print("ERROR: RaidSanctions.Logic.SetCurrentSession not available")
         end
         
-        if mergedPlayers > 0 or updatedPlayers > 0 then
-            table.insert(itemsUpdated, "Session Data (" .. mergedPlayers .. " new, " .. updatedPlayers .. " updated)")
+        if mergedPlayers > 0 then
+            table.insert(itemsUpdated, "Session Data (" .. mergedPlayers .. " players synced)")
+            print("DEBUG: Successfully synced " .. mergedPlayers .. " players")
         end
     end
     
