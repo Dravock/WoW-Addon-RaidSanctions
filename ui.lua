@@ -90,6 +90,15 @@ function UI:CreateHeader()
         UI:ShowOptionsWindow()
     end)
     
+    -- Season Stats button (next to Options)
+    local seasonStatsButton = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
+    seasonStatsButton:SetSize(100, 25)
+    seasonStatsButton:SetText("Season Stats")
+    seasonStatsButton:SetPoint("TOPLEFT", optionsButton, "TOPRIGHT", 10, 0)
+    seasonStatsButton:SetScript("OnClick", function()
+        UI:ShowSeasonStatsWindow()
+    end)
+    
     -- Close button
     local closeButton = CreateFrame("Button", nil, mainFrame, "UIPanelCloseButton")
     closeButton:SetPoint("TOPRIGHT", -5, -5)
@@ -392,6 +401,74 @@ function UI:RefreshPlayerList()
     mainFrame.contentFrame:SetHeight(math.max(contentHeight, mainFrame.scrollFrame:GetHeight()))
 end
 
+function UI:RefreshSeasonPlayerList()
+    if not self.seasonStatsFrame then
+        return
+    end
+    
+    local seasonFrame = self.seasonStatsFrame
+    
+    -- Remove old rows
+    for _, row in ipairs(seasonFrame.playerRows) do
+        row:Hide()
+        row:SetParent(nil)
+    end
+    wipe(seasonFrame.playerRows)
+    
+    -- Get categorized season data from Logic module
+    local guildPlayers, randomPlayers = RaidSanctions.Logic:GetSeasonPlayersByCategory()
+    
+    -- Check if we have any data
+    if #guildPlayers == 0 and #randomPlayers == 0 then
+        local placeholderText = seasonFrame.contentFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        placeholderText:SetPoint("CENTER", 0, 0)
+        placeholderText:SetText("No Season Data Available\n\nSeason statistics will appear here when data is collected.")
+        placeholderText:SetTextColor(0.8, 0.8, 0.8)
+        placeholderText:SetJustifyH("CENTER")
+        return
+    end
+    
+    local yOffset = 0
+    local contentHeight = 0
+    
+    -- Add Guild Members section
+    if #guildPlayers > 0 then
+        local guildHeader = self:CreateSeasonSectionHeader("Guild Members (" .. #guildPlayers .. ")", yOffset, seasonFrame.contentFrame)
+        table.insert(seasonFrame.playerRows, guildHeader)
+        yOffset = yOffset - ROW_HEIGHT
+        contentHeight = contentHeight + ROW_HEIGHT
+        
+        for _, playerData in ipairs(guildPlayers) do
+            local row = self:CreateSeasonPlayerRow(playerData.name, playerData, yOffset, seasonFrame.contentFrame)
+            table.insert(seasonFrame.playerRows, row)
+            yOffset = yOffset - ROW_HEIGHT
+            contentHeight = contentHeight + ROW_HEIGHT
+        end
+        
+        -- Add spacing between sections
+        yOffset = yOffset - 10
+        contentHeight = contentHeight + 10
+    end
+    
+    -- Add Random Players section
+    if #randomPlayers > 0 then
+        local randomHeader = self:CreateSeasonSectionHeader("Random Players (" .. #randomPlayers .. ")", yOffset, seasonFrame.contentFrame)
+        table.insert(seasonFrame.playerRows, randomHeader)
+        yOffset = yOffset - ROW_HEIGHT
+        contentHeight = contentHeight + ROW_HEIGHT
+        
+        for _, playerData in ipairs(randomPlayers) do
+            local row = self:CreateSeasonPlayerRow(playerData.name, playerData, yOffset, seasonFrame.contentFrame)
+            table.insert(seasonFrame.playerRows, row)
+            yOffset = yOffset - ROW_HEIGHT
+            contentHeight = contentHeight + ROW_HEIGHT
+        end
+    end
+    
+    -- Adjust content frame height
+    seasonFrame.contentFrame:SetHeight(math.max(contentHeight, seasonFrame.scrollFrame:GetHeight()))
+end
+
 function UI:IsPlayerInGuild(playerName)
     -- Check if player is in the same guild as the current player
     if not IsInGuild() then
@@ -524,6 +601,105 @@ function UI:CreatePlayerRow(playerName, playerData, yOffset)
     
     -- Save row for selection system
     row.playerName = playerName
+    
+    return row
+end
+
+function UI:CreateSeasonSectionHeader(title, yOffset, parentFrame)
+    local header = CreateFrame("Frame", nil, parentFrame)
+    header:SetSize(FRAME_WIDTH - 50, ROW_HEIGHT)
+    header:SetPoint("TOPLEFT", 0, yOffset)
+    
+    -- Background for section header
+    local bg = header:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0.3, 0.3, 0.3, 0.6)
+    
+    -- Title text
+    local titleLabel = header:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    titleLabel:SetPoint("LEFT", 10, 0)
+    titleLabel:SetText(title)
+    titleLabel:SetTextColor(1, 0.8, 0) -- Gold color
+    
+    return header
+end
+
+function UI:CreateSeasonPlayerRow(playerName, playerData, yOffset, parentFrame)
+    local row = CreateFrame("Frame", nil, parentFrame) -- Frame instead of Button (no selection needed)
+    row:SetSize(FRAME_WIDTH - 50, ROW_HEIGHT)
+    row:SetPoint("TOPLEFT", 0, yOffset)
+    
+    -- Background for better readability
+    local bg = row:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    if math.floor(math.abs(yOffset) / ROW_HEIGHT) % 2 == 0 then
+        bg:SetColorTexture(0.2, 0.2, 0.2, 0.3)
+    else
+        bg:SetColorTexture(0.1, 0.1, 0.1, 0.2)
+    end
+    
+    -- Player name with class color
+    local nameLabel = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    nameLabel:SetPoint("LEFT", 5, 0)
+    nameLabel:SetText(playerName)
+    
+    -- Apply class color if available
+    if playerData.class then
+        local classColor = RAID_CLASS_COLORS[playerData.class]
+        if classColor then
+            nameLabel:SetTextColor(classColor.r, classColor.g, classColor.b)
+        end
+    end
+    
+    -- Penalty-Counter (same as main window)
+    local xOffset = 150
+    for reason, amount in pairs(RaidSanctions.Logic:GetPenalties()) do
+        local counter = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        counter:SetPoint("LEFT", xOffset, 0)
+        counter:SetWidth(BUTTON_WIDTH)
+        counter:SetJustifyH("CENTER")
+        
+        -- Calculate counter value from season data
+        local count = 0
+        if playerData.penalties then
+            for _, penalty in ipairs(playerData.penalties) do
+                if penalty.reason == reason then
+                    count = count + 1
+                end
+            end
+        end
+        
+        counter:SetText(tostring(count))
+        
+        -- Color based on count
+        if count > 3 then
+            counter:SetTextColor(1, 0.2, 0.2) -- Red
+        elseif count > 1 then
+            counter:SetTextColor(1, 0.8, 0.2) -- Orange
+        elseif count > 0 then
+            counter:SetTextColor(1, 1, 0.2) -- Yellow
+        else
+            counter:SetTextColor(0.8, 0.8, 0.8) -- Gray
+        end
+        
+        xOffset = xOffset + (BUTTON_WIDTH + 15)
+    end
+    
+    -- Total display
+    local totalLabel = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    totalLabel:SetPoint("RIGHT", -10, 0)
+    totalLabel:SetText(RaidSanctions.Logic:FormatGold(playerData.totalAmount))
+    totalLabel:SetWidth(120)
+    totalLabel:SetJustifyH("RIGHT")
+    
+    -- Color based on penalty amount
+    if playerData.totalAmount > 50000 then -- > 5g
+        totalLabel:SetTextColor(1, 0.2, 0.2) -- Red
+    elseif playerData.totalAmount > 20000 then -- > 2g
+        totalLabel:SetTextColor(1, 0.8, 0.2) -- Orange
+    else
+        totalLabel:SetTextColor(0.8, 0.8, 0.8) -- Gray
+    end
     
     return row
 end
@@ -708,6 +884,17 @@ function UI:ShowOptionsWindow()
     self.optionsFrame:Show()
 end
 
+function UI:ShowSeasonStatsWindow()
+    if not self.seasonStatsFrame then
+        self:CreateSeasonStatsWindow()
+    end
+    
+    -- Update season data before showing to ensure it's current
+    RaidSanctions.Logic:UpdateSeasonData()
+    
+    self.seasonStatsFrame:Show()
+end
+
 function UI:CreateOptionsWindow()
     -- Create options frame
     local optionsFrame = CreateFrame("Frame", "RaidSanctionsOptionsFrame", mainFrame, "BackdropTemplate")
@@ -856,6 +1043,128 @@ function UI:CreateOptionsWindow()
     
     -- Store frame
     self.optionsFrame = optionsFrame
+end
+
+function UI:CreateSeasonStatsWindow()
+    -- Create season stats frame
+    local seasonStatsFrame = CreateFrame("Frame", "RaidSanctionsSeasonStatsFrame", UIParent, "BackdropTemplate")
+    seasonStatsFrame:SetSize(FRAME_WIDTH, FRAME_HEIGHT - 200) -- Kleiner, da keine Tools
+    seasonStatsFrame:SetPoint("CENTER")
+    seasonStatsFrame:SetFrameStrata("HIGH")
+    seasonStatsFrame:SetFrameLevel(200) -- Above main window
+    
+    -- Backdrop for season stats frame
+    seasonStatsFrame:SetBackdrop({
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true,
+        tileSize = 16,
+        edgeSize = 16,
+        insets = { left = 3, right = 3, top = 3, bottom = 3 }
+    })
+    seasonStatsFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
+    seasonStatsFrame:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    
+    -- Make movable
+    seasonStatsFrame:SetMovable(true)
+    seasonStatsFrame:EnableMouse(true)
+    seasonStatsFrame:RegisterForDrag("LeftButton")
+    seasonStatsFrame:SetScript("OnDragStart", function(self)
+        self:StartMoving()
+    end)
+    seasonStatsFrame:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+    end)
+    
+    -- Title for season stats frame
+    local seasonStatsTitle = seasonStatsFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+    seasonStatsTitle:SetPoint("TOP", 0, -15)
+    seasonStatsTitle:SetText("Season Statistics")
+    seasonStatsTitle:SetTextColor(1, 0.8, 0)
+    
+    -- Close button for season stats frame
+    local seasonStatsCloseButton = CreateFrame("Button", nil, seasonStatsFrame, "UIPanelCloseButton")
+    seasonStatsCloseButton:SetPoint("TOPRIGHT", -5, -5)
+    seasonStatsCloseButton:SetScript("OnClick", function()
+        seasonStatsFrame:Hide()
+    end)
+    
+    -- Header row for column titles (same as main window)
+    local headerFrame = CreateFrame("Frame", nil, seasonStatsFrame)
+    headerFrame:SetSize(FRAME_WIDTH - 20, 25)
+    headerFrame:SetPoint("TOPLEFT", 10, -50)
+    
+    -- Player name label
+    local nameHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    nameHeader:SetPoint("LEFT", 5, 0)
+    nameHeader:SetText("Player")
+    nameHeader:SetTextColor(0.8, 0.8, 0.8)
+    
+    -- Create penalty headers dynamically
+    local xOffset = 150
+    for reason, amount in pairs(Logic:GetPenalties()) do
+        local header = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        header:SetPoint("LEFT", xOffset, 0)
+        header:SetText(reason)
+        header:SetTextColor(0.8, 0.8, 0.8)
+        header:SetWidth(BUTTON_WIDTH)
+        header:SetJustifyH("CENTER")
+        xOffset = xOffset + (BUTTON_WIDTH + 15)
+    end
+    
+    -- Total header
+    local totalHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    totalHeader:SetPoint("RIGHT", -10, 0)
+    totalHeader:SetText("Total")
+    totalHeader:SetTextColor(0.8, 0.8, 0.8)
+    totalHeader:SetWidth(120)
+    totalHeader:SetJustifyH("CENTER")
+    
+    -- Scroll container for player list (takes up most of the frame)
+    local scrollFrame = CreateFrame("ScrollFrame", nil, seasonStatsFrame, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", 10, -80)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -30, 40) -- Leave space for clear button
+    
+    local contentFrame = CreateFrame("Frame", nil, scrollFrame)
+    contentFrame:SetSize(FRAME_WIDTH - 50, 1) -- Height is adjusted dynamically
+    scrollFrame:SetScrollChild(contentFrame)
+    
+    -- Clear Season Data button
+    local clearButton = CreateFrame("Button", nil, seasonStatsFrame, "UIPanelButtonTemplate")
+    clearButton:SetSize(150, 25)
+    clearButton:SetPoint("BOTTOMRIGHT", -10, 10)
+    clearButton:SetText("Clear Season Data")
+    clearButton:SetScript("OnClick", function()
+        StaticPopup_Show("RAIDSANCTIONS_CLEAR_SEASON_CONFIRM")
+    end)
+    
+    -- Store references
+    seasonStatsFrame.scrollFrame = scrollFrame
+    seasonStatsFrame.contentFrame = contentFrame
+    seasonStatsFrame.playerRows = {}
+    
+    -- ESC key handler for season stats frame
+    seasonStatsFrame:SetScript("OnKeyDown", function(self, key)
+        if key == "ESCAPE" then
+            self:Hide()
+        end
+    end)
+    
+    seasonStatsFrame:SetScript("OnShow", function(self)
+        self:EnableKeyboard(true)
+        -- Refresh season data when showing
+        UI:RefreshSeasonPlayerList()
+    end)
+    
+    seasonStatsFrame:SetScript("OnHide", function(self)
+        self:EnableKeyboard(false)
+    end)
+    
+    -- Hidden by default
+    seasonStatsFrame:Hide()
+    
+    -- Store frame
+    self.seasonStatsFrame = seasonStatsFrame
 end
 
 function UI:CreatePenaltiesTabContent(content)
@@ -1060,6 +1369,22 @@ StaticPopupDialogs["RAIDSANCTIONS_PLAYER_PAID_CONFIRM"] = {
             UI:RefreshPlayerList()
         else
             print("Error resetting player penalties.")
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["RAIDSANCTIONS_CLEAR_SEASON_CONFIRM"] = {
+    text = "Clear all Season Statistics?\n\nThis will permanently delete all accumulated season data.",
+    button1 = "Clear",
+    button2 = "Cancel",
+    OnAccept = function()
+        RaidSanctions.Logic:ClearSeasonData()
+        if RaidSanctions.UI and RaidSanctions.UI.RefreshSeasonPlayerList then
+            RaidSanctions.UI:RefreshSeasonPlayerList()
         end
     end,
     timeout = 0,

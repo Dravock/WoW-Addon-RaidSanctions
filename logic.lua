@@ -63,8 +63,14 @@ function Logic:InitializeDatabase()
     -- Character-specific database
     RaidSanctionsCharDB = RaidSanctionsCharDB or {
         sessions = {},
-        currentSession = nil
+        currentSession = nil,
+        seasonData = {} -- Initialize season data
     }
+    
+    -- Initialize season data if it doesn't exist
+    if not RaidSanctionsCharDB.seasonData then
+        RaidSanctionsCharDB.seasonData = {}
+    end
     
     -- Version check and migration if needed
     if RaidSanctionsDB.version ~= ADDON_VERSION then
@@ -200,6 +206,9 @@ function Logic:ApplyPenalty(playerName, reason, amount)
     
     table.insert(player.penalties, penaltyEntry)
     player.total = player.total + amount
+    
+    -- Update season data automatically
+    self:UpdateSeasonData()
     
     -- Feedback
     local message = format(L["PENALTY_APPLIED"], 
@@ -354,6 +363,140 @@ function Logic:Debug(message)
     end
 end
 
+-- Season Stats Functionality
+function Logic:GetSeasonData()
+    -- Initialize season data if it doesn't exist
+    if not RaidSanctionsCharDB.seasonData then
+        RaidSanctionsCharDB.seasonData = {}
+    end
+    
+    -- Migrate existing season data to add processedSessionPenalties field
+    for playerName, playerData in pairs(RaidSanctionsCharDB.seasonData) do
+        if not playerData.processedSessionPenalties then
+            playerData.processedSessionPenalties = {}
+            
+            -- Mark all existing penalties as processed to avoid duplicates
+            for _, penalty in ipairs(playerData.penalties or {}) do
+                local penaltyId = penalty.timestamp .. "_" .. penalty.reason .. "_" .. penalty.amount
+                playerData.processedSessionPenalties[penaltyId] = true
+            end
+        end
+    end
+    
+    return RaidSanctionsCharDB.seasonData
+end
+
+function Logic:UpdateSeasonData()
+    -- Get current session data
+    local session = self:GetCurrentSession()
+    if not session or not session.players then
+        return
+    end
+    
+    -- Initialize season data if needed
+    local seasonData = self:GetSeasonData()
+    
+    -- Update season data with current session
+    for playerName, playerData in pairs(session.players) do
+        if not seasonData[playerName] then
+            seasonData[playerName] = {
+                class = playerData.class,
+                penalties = {},
+                totalAmount = 0,
+                totalPenalties = 0,
+                lastSeen = time(),
+                processedSessionPenalties = {} -- Track which penalties we've already processed
+            }
+        end
+        
+        -- Update player's season data
+        local seasonPlayer = seasonData[playerName]
+        seasonPlayer.class = playerData.class or seasonPlayer.class
+        seasonPlayer.lastSeen = time()
+        
+        -- Initialize processed penalties tracker if it doesn't exist
+        if not seasonPlayer.processedSessionPenalties then
+            seasonPlayer.processedSessionPenalties = {}
+        end
+        
+        -- Add new penalties from current session to season data (avoid duplicates)
+        for _, penalty in ipairs(playerData.penalties) do
+            -- Create unique identifier for this penalty
+            local penaltyId = penalty.timestamp .. "_" .. penalty.reason .. "_" .. penalty.amount
+            
+            -- Check if we've already processed this penalty
+            if not seasonPlayer.processedSessionPenalties[penaltyId] then
+                -- Add penalty to season data
+                table.insert(seasonPlayer.penalties, {
+                    reason = penalty.reason,
+                    amount = penalty.amount,
+                    timestamp = penalty.timestamp,
+                    date = penalty.date,
+                    sessionId = session.id
+                })
+                
+                -- Update totals
+                seasonPlayer.totalAmount = seasonPlayer.totalAmount + penalty.amount
+                seasonPlayer.totalPenalties = seasonPlayer.totalPenalties + 1
+                
+                -- Mark penalty as processed
+                seasonPlayer.processedSessionPenalties[penaltyId] = true
+            end
+        end
+    end
+end
+
+function Logic:ClearSeasonData()
+    RaidSanctionsCharDB.seasonData = {}
+    print("Season data has been cleared.")
+end
+
+function Logic:GetSeasonPlayersByCategory()
+    local seasonData = self:GetSeasonData()
+    local guildPlayers = {}
+    local randomPlayers = {}
+    
+    -- Get current guild name
+    local guildName = GetGuildInfo("player")
+    
+    for playerName, playerData in pairs(seasonData) do
+        local isGuildMember = false
+        
+        -- Check if player is in our guild
+        if guildName then
+            local numGuildMembers = GetNumGuildMembers()
+            for i = 1, numGuildMembers do
+                local name = GetGuildRosterInfo(i)
+                if name and name == playerName then
+                    isGuildMember = true
+                    break
+                end
+            end
+        end
+        
+        local playerInfo = {
+            name = playerName,
+            class = playerData.class,
+            totalAmount = playerData.totalAmount,
+            totalPenalties = playerData.totalPenalties,
+            lastSeen = playerData.lastSeen,
+            penalties = playerData.penalties or {} -- Include penalties array for counter calculation
+        }
+        
+        if isGuildMember then
+            table.insert(guildPlayers, playerInfo)
+        else
+            table.insert(randomPlayers, playerInfo)
+        end
+    end
+    
+    -- Sort both categories by total amount (highest first)
+    table.sort(guildPlayers, function(a, b) return a.totalAmount > b.totalAmount end)
+    table.sort(randomPlayers, function(a, b) return a.totalAmount > b.totalAmount end)
+    
+    return guildPlayers, randomPlayers
+end
+
 -- Event handlers
 function Logic:OnAddonLoaded()
     self:InitializeDatabase()
@@ -370,9 +513,15 @@ end
 function Logic:OnGroupRosterUpdate()
     if IsInRaid() or IsInGroup() then
         self:UpdateRaidMembers()
+        -- Update season data when group changes
+        self:UpdateSeasonData()
         -- Update UI if visible
         if RaidSanctions.UI and RaidSanctions.UI.RefreshPlayerList then
             RaidSanctions.UI:RefreshPlayerList()
+        end
+        -- Refresh Season Stats window if open
+        if RaidSanctions.UI and RaidSanctions.UI.RefreshSeasonPlayerList then
+            RaidSanctions.UI:RefreshSeasonPlayerList()
         end
     else
         -- No longer in group - mark session as inactive
