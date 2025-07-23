@@ -14,7 +14,7 @@ local format = string.format
 local pairs, ipairs = pairs, ipairs
 
 -- UI Constants
-local FRAME_WIDTH = 800
+local FRAME_WIDTH = 900  -- Increased from 800 to 900
 local FRAME_HEIGHT = 700  -- More height for bottom button bar
 local ROW_HEIGHT = 30
 local BUTTON_WIDTH = 80
@@ -191,7 +191,7 @@ function UI:CreateBottomPanel()
     local yOffset = -30
     for reason, amount in pairs(Logic:GetPenalties()) do
         local button = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-        button:SetSize(140, BUTTON_HEIGHT)
+        button:SetSize(160, BUTTON_HEIGHT) -- Increased from 140 to 160
         button:SetPoint("TOPLEFT", xOffset, yOffset)
         button:SetText(reason .. " (" .. Logic:FormatGold(amount) .. ")")
         
@@ -212,8 +212,8 @@ function UI:CreateBottomPanel()
             GameTooltip:Hide()
         end)
         
-        xOffset = xOffset + 150
-        if xOffset > FRAME_WIDTH - 160 then -- Next line
+        xOffset = xOffset + 170 -- Increased spacing from 150 to 170
+        if xOffset > FRAME_WIDTH - 180 then -- Adjusted break point from 160 to 180
             xOffset = 10
             yOffset = yOffset - 30
         end
@@ -641,17 +641,22 @@ function UI:CreateOptionsWindow()
         content:SetAllPoints()
         content:Hide() -- Hide all initially
         
-        -- Title for each tab
-        local title = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        title:SetPoint("TOP", 0, -15)
-        title:SetText(data.name .. " Settings")
-        title:SetTextColor(1, 0.8, 0)
-        
-        -- Placeholder for tab content
-        local info = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        info:SetPoint("CENTER", 0, 0)
-        info:SetText("Content for " .. data.name .. " will be implemented here...")
-        info:SetTextColor(0.7, 0.7, 0.7)
+        if data.key == "penalties" then
+            -- Penalties tab content
+            UI:CreatePenaltiesTabContent(content)
+        else
+            -- Title for each tab
+            local title = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            title:SetPoint("TOP", 0, -15)
+            title:SetText(data.name .. " Settings")
+            title:SetTextColor(1, 0.8, 0)
+            
+            -- Placeholder for tab content
+            local info = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            info:SetPoint("CENTER", 0, 0)
+            info:SetText("Content for " .. data.name .. " will be implemented here...")
+            info:SetTextColor(0.7, 0.7, 0.7)
+        end
         
         tabContents[i] = content
     end
@@ -698,6 +703,147 @@ function UI:CreateOptionsWindow()
     
     -- Store frame
     self.optionsFrame = optionsFrame
+end
+
+function UI:CreatePenaltiesTabContent(content)
+    -- Title for penalties tab
+    local title = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    title:SetPoint("TOP", 0, -15)
+    title:SetText("Penalty Settings")
+    title:SetTextColor(1, 0.8, 0)
+    
+    -- Info text
+    local info = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    info:SetPoint("TOP", title, "BOTTOM", 0, -15)
+    info:SetText("Customize penalty amounts (enter values in gold)")
+    info:SetTextColor(0.8, 0.8, 0.8)
+    
+    -- Create penalty input fields
+    local yOffset = -70
+    local editBoxes = {}
+    
+    for reason, amount in pairs(Logic:GetPenalties()) do
+        -- Label for penalty type
+        local label = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        label:SetPoint("TOPLEFT", 20, yOffset)
+        label:SetText(reason .. ":")
+        label:SetTextColor(1, 1, 1)
+        label:SetWidth(120)
+        label:SetJustifyH("LEFT")
+        
+        -- Input field for penalty amount
+        local editBox = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
+        editBox:SetSize(80, 30)
+        editBox:SetPoint("LEFT", label, "RIGHT", 20, 0)
+        editBox:SetAutoFocus(false)
+        editBox:SetMaxLetters(10)
+        editBox:SetNumeric(true)
+        -- Convert from copper to gold for display
+        local goldValue = math.floor(amount / 10000)
+        editBox:SetText(tostring(goldValue))
+        
+        -- Gold display label
+        local goldLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        goldLabel:SetPoint("LEFT", editBox, "RIGHT", 10, 0)
+        goldLabel:SetTextColor(0.8, 0.8, 0.8)
+        goldLabel:SetText("Gold")
+        
+        -- Update gold display when value changes (no longer needed for conversion)
+        editBox:SetScript("OnTextChanged", function(self)
+            -- Gold label stays static as "Gold"
+        end)
+        
+        -- Store reference
+        editBoxes[reason] = editBox
+        
+        yOffset = yOffset - 40
+    end
+    
+    -- Buttons section
+    local buttonY = yOffset - 20
+    
+    -- Save button
+    local saveButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    saveButton:SetSize(100, 30)
+    saveButton:SetPoint("TOPLEFT", 20, buttonY)
+    saveButton:SetText("Save")
+    saveButton:GetFontString():SetTextColor(0.2, 1, 0.2)
+    
+    saveButton:SetScript("OnClick", function()
+        UI:SavePenaltySettings(editBoxes)
+    end)
+    
+    -- Reset to defaults button
+    local resetButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    resetButton:SetSize(120, 30)
+    resetButton:SetPoint("LEFT", saveButton, "RIGHT", 10, 0)
+    resetButton:SetText("Reset to 1 Gold")
+    resetButton:GetFontString():SetTextColor(1, 0.8, 0.2)
+    
+    resetButton:SetScript("OnClick", function()
+        UI:ResetPenaltiesToDefault(editBoxes)
+    end)
+    
+    -- Help text
+    local helpText = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    helpText:SetPoint("TOPLEFT", 20, buttonY - 40)
+    helpText:SetWidth(400)
+    helpText:SetJustifyH("LEFT")
+    helpText:SetText("Note: Changes take effect immediately and will update the UI.\nEnter values in whole gold amounts (e.g., 5 for 5 Gold).")
+    helpText:SetTextColor(0.7, 0.7, 0.7)
+    
+    -- Store references
+    content.editBoxes = editBoxes
+end
+
+function UI:SavePenaltySettings(editBoxes)
+    local newPenalties = {}
+    
+    -- Collect values from edit boxes and convert gold to copper
+    for reason, editBox in pairs(editBoxes) do
+        local goldValue = tonumber(editBox:GetText()) or 1 -- Default to 1g if invalid
+        if goldValue < 0 then goldValue = 0 end -- No negative values
+        if goldValue > 100000 then goldValue = 100000 end -- Max 100k gold (reasonable limit)
+        
+        -- Convert gold to copper (multiply by 10000)
+        local copperValue = goldValue * 10000
+        newPenalties[reason] = copperValue
+    end
+    
+    -- Update penalties in Logic module
+    if Logic.SetCustomPenalties then
+        Logic:SetCustomPenalties(newPenalties)
+        print("Penalty settings saved!")
+        
+        -- Refresh main UI elements that show penalty values
+        if mainFrame and mainFrame:IsShown() then
+            -- Recreate bottom panel with new penalty values
+            if mainFrame.bottomPanel then
+                mainFrame.bottomPanel:Hide()
+                mainFrame.bottomPanel:SetParent(nil)
+                mainFrame.bottomPanel = nil
+            end
+            self:CreateBottomPanel()
+            
+            -- Refresh player list to update penalty counters
+            self:RefreshPlayerList()
+        end
+        
+        -- Close options window
+        if self.optionsFrame then
+            self.optionsFrame:Hide()
+        end
+    else
+        print("Error: Cannot save penalty settings. Logic module update required.")
+    end
+end
+
+function UI:ResetPenaltiesToDefault(editBoxes)
+    -- Set all edit boxes to 1 (1g)
+    for reason, editBox in pairs(editBoxes) do
+        editBox:SetText("1")
+    end
+    print("All penalties reset to 1 Gold. Click 'Save' to apply changes.")
 end
 
 -- Static popup for reset confirmation
