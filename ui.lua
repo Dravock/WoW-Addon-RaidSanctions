@@ -335,26 +335,48 @@ function UI:SetupEventHandlers()
     
     print("DEBUG: SetupEventHandlers() called")
     
+    -- Clear any existing event handlers first
+    if self.syncEventFrame then
+        self.syncEventFrame:UnregisterAllEvents()
+        self.syncEventFrame:SetScript("OnEvent", nil)
+        self.syncEventFrame = nil
+        print("DEBUG: Cleared existing event handler")
+    end
+    
     -- Register for addon communication (max 16 characters)
     local registerResult = C_ChatInfo.RegisterAddonMessagePrefix("RaidSanctions")
     print("DEBUG: RegisterAddonMessagePrefix result: " .. tostring(registerResult))
     
-    -- Set up addon message handler
-    local eventFrame = CreateFrame("Frame")
-    eventFrame:RegisterEvent("CHAT_MSG_ADDON")
-    print("DEBUG: Event frame created and CHAT_MSG_ADDON registered")
+    -- Set up NEW addon message handler
+    self.syncEventFrame = CreateFrame("Frame", "RaidSanctionsSyncFrame")
+    self.syncEventFrame:RegisterEvent("CHAT_MSG_ADDON")
+    print("DEBUG: New event frame created and CHAT_MSG_ADDON registered")
     
-    eventFrame:SetScript("OnEvent", function(self, event, prefix, message, distribution, sender)
-        print("DEBUG: Event received - Event: " .. tostring(event) .. ", Prefix: " .. tostring(prefix))
+    self.syncEventFrame:SetScript("OnEvent", function(self, event, prefix, message, distribution, sender)
+        print("DEBUG: NEW HANDLER - Event: " .. tostring(event) .. ", Prefix: " .. tostring(prefix) .. ", Sender: " .. tostring(sender))
+        
+        -- Ignore our own messages completely
+        local playerName = UnitName("player")
+        -- Also handle realm names (e.g., "Drodar-Eredar" vs "Drodar")
+        local senderName = sender:match("([^-]+)") or sender
+        local currentName = playerName:match("([^-]+)") or playerName
+        
+        print("DEBUG: Comparing sender '" .. senderName .. "' with current player '" .. currentName .. "'")
+        
+        if senderName == currentName then
+            print("DEBUG: Ignoring message from self (" .. senderName .. " == " .. currentName .. ")")
+            return
+        end
+        
         if event == "CHAT_MSG_ADDON" and prefix == "RaidSanctions" then
-            print("DEBUG: RaidSanctions message received, calling HandleSyncMessage")
+            print("DEBUG: RaidSanctions message received from " .. sender .. ", calling HandleSyncMessage")
             UI:HandleSyncMessage(message, sender, distribution)
         else
             print("DEBUG: Ignoring event/prefix: " .. tostring(event) .. "/" .. tostring(prefix))
         end
     end)
     
-    print("DEBUG: Event handler setup complete")
+    print("DEBUG: NEW event handler setup complete")
 end
 
 function UI:RefreshPlayerList()
@@ -1036,6 +1058,11 @@ function UI:SyncSessionData()
     
     print("DEBUG: Data serialized successfully, length: " .. string.len(dataString))
     
+    -- Check message length (WoW has a limit)
+    if string.len(dataString) > 4000 then
+        print("DEBUG: WARNING - Message is very long (" .. string.len(dataString) .. " characters), may fail to send")
+    end
+    
     -- Send via addon communication
     local channel = IsInRaid() and "RAID" or "PARTY"
     print("DEBUG: Sending to channel: " .. channel)
@@ -1043,7 +1070,14 @@ function UI:SyncSessionData()
     local success = C_ChatInfo.SendAddonMessage("RaidSanctions", dataString, channel)
     print("DEBUG: SendAddonMessage result: " .. tostring(success))
     
-    print("Complete data synchronized to " .. (IsInRaid() and "raid" or "party") .. " members (Session + Penalties + Season Stats).")
+    if success and success ~= 0 then
+        print("Complete data synchronized to " .. (IsInRaid() and "raid" or "party") .. " members (Session + Penalties + Season Stats).")
+    else
+        print("ERROR: Failed to send sync message (result: " .. tostring(success) .. ")")
+        if string.len(dataString) > 4000 then
+            print("ERROR: Message too long for WoW addon communication (" .. string.len(dataString) .. " chars)")
+        end
+    end
 end
 
 function UI:SerializeSyncData(data)
@@ -1235,14 +1269,14 @@ function UI:DeserializeSyncData(dataString)
 end
 
 function UI:HandleSyncMessage(message, sender, distribution)
+    print("*** CRITICAL DEBUG: HandleSyncMessage() SHOULD NEVER BE CALLED FOR SELF! ***")
     print("DEBUG: HandleSyncMessage() called from sender: " .. tostring(sender) .. ", distribution: " .. tostring(distribution))
     print("DEBUG: Message length: " .. string.len(message))
+    print("DEBUG: Current player name: " .. tostring(UnitName("player")))
     
-    -- Ignore messages from ourselves
-    local playerName = UnitName("player")
-    print("DEBUG: Current player: " .. tostring(playerName) .. ", sender: " .. tostring(sender))
-    if sender == playerName then
-        print("DEBUG: Ignoring message from self")
+    -- Emergency safety check - this should never happen now
+    if sender == UnitName("player") then
+        print("*** EMERGENCY: Self message reached HandleSyncMessage - this is a bug! ***")
         return
     end
     
