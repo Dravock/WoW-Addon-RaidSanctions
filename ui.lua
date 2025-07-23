@@ -398,6 +398,7 @@ function UI:RefreshPlayerList()
     
     -- Check authorization and update UI accordingly
     local isAuthorized = self:IsPlayerAuthorized()
+    print("DEBUG: RefreshPlayerList - isAuthorized: " .. tostring(isAuthorized))
     self:UpdateAuthorizationStatus(isAuthorized)
     
     -- Separate players by guild membership
@@ -529,12 +530,16 @@ function UI:RefreshSeasonPlayerList()
 end
 
 function UI:UpdateAuthorizationStatus(isAuthorized)
+    print("DEBUG: UpdateAuthorizationStatus() called with isAuthorized: " .. tostring(isAuthorized))
+    
     if not mainFrame or not mainFrame.bottomPanel then
+        print("DEBUG: No mainFrame or bottomPanel available")
         return
     end
     
     -- Create or update authorization status label
     if not mainFrame.authStatusLabel then
+        print("DEBUG: Creating auth status label")
         mainFrame.authStatusLabel = mainFrame.bottomPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         mainFrame.authStatusLabel:SetPoint("TOPRIGHT", -10, -8)
     end
@@ -542,12 +547,15 @@ function UI:UpdateAuthorizationStatus(isAuthorized)
     if isAuthorized then
         mainFrame.authStatusLabel:SetText("✓ Authorized (Leader/Assistant)")
         mainFrame.authStatusLabel:SetTextColor(0.2, 1, 0.2) -- Green
+        print("DEBUG: Set authorized status (green)")
     else
         mainFrame.authStatusLabel:SetText("✗ Not Authorized (Need Leader/Assistant)")
         mainFrame.authStatusLabel:SetTextColor(1, 0.2, 0.2) -- Red
+        print("DEBUG: Set not authorized status (red)")
     end
     
     -- Update toolbar buttons based on authorization
+    print("DEBUG: Calling SetToolbarButtonsEnabled with: " .. tostring(isAuthorized))
     self:SetToolbarButtonsEnabled(isAuthorized)
 end
 
@@ -2542,17 +2550,22 @@ function UI:SetMainFrameButtonsEnabled(enabled)
 end
 
 function UI:SetToolbarButtonsEnabled(enabled)
+    print("DEBUG: SetToolbarButtonsEnabled() called with enabled: " .. tostring(enabled))
+    
     if not mainFrame or not mainFrame.bottomPanel then
+        print("DEBUG: No mainFrame or bottomPanel available")
         return
     end
     
     -- Don't override popup window state
     if mainFrame.popupWindowOpen then
+        print("DEBUG: Popup window open, skipping toolbar update")
         return
     end
     
     -- Store references to toolbar buttons that require authorization
     if not mainFrame.toolbarButtons then
+        print("DEBUG: Finding toolbar buttons that require authorization")
         mainFrame.toolbarButtons = {}
         
         -- Find all buttons in bottom panel that require authorization
@@ -2570,6 +2583,7 @@ function UI:SetToolbarButtonsEnabled(enabled)
                     for _, restrictedText in ipairs(restrictedButtons) do
                         if buttonText:find(restrictedText) then
                             table.insert(mainFrame.toolbarButtons, frame)
+                            print("DEBUG: Found restricted button: " .. buttonText)
                             break
                         end
                     end
@@ -2584,9 +2598,11 @@ function UI:SetToolbarButtonsEnabled(enabled)
         end
         
         findToolbarButtons(mainFrame.bottomPanel)
+        print("DEBUG: Found " .. #mainFrame.toolbarButtons .. " restricted buttons")
     end
     
     -- Enable/disable toolbar buttons that require authorization
+    local buttonsUpdated = 0
     for _, button in ipairs(mainFrame.toolbarButtons) do
         if button:IsObjectType("Button") then
             button:SetEnabled(enabled)
@@ -2597,8 +2613,10 @@ function UI:SetToolbarButtonsEnabled(enabled)
                 button:SetAlpha(0.4) -- More transparent when disabled
                 button:GetFontString():SetTextColor(0.5, 0.5, 0.5) -- Gray out text
             end
+            buttonsUpdated = buttonsUpdated + 1
         end
     end
+    print("DEBUG: Updated " .. buttonsUpdated .. " toolbar buttons, enabled: " .. tostring(enabled))
 end
 
 function UI:RestoreButtonColors(button)
