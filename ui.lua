@@ -1018,7 +1018,7 @@ function UI:SyncSessionData()
 end
 
 function UI:SendMultiMessageSync(session, penalties, seasonData)
-    print("DEBUG: SendMultiMessageSync() called - sending individual messages for each player")
+    print("DEBUG: SendMultiMessageSync() called - preparing delayed message sending")
     
     local sender = UnitName("player")
     local timestamp = time()
@@ -1029,28 +1029,26 @@ function UI:SendMultiMessageSync(session, penalties, seasonData)
         totalPlayers = totalPlayers + 1
     end
     
-    print("DEBUG: Will send " .. totalPlayers .. " individual player messages + 2 config messages")
+    print("DEBUG: Will send " .. totalPlayers .. " individual player messages + 3 config messages with delays")
     
-    -- 1. First send penalty configuration
+    -- Create message queue
+    local messageQueue = {}
+    
+    -- 1. Penalty configuration message
     local penaltyConfigMsg = "CFG:PENALTIES|V:2.0|S:" .. sender .. "|T:" .. timestamp .. "|"
     for reason, amount in pairs(penalties) do
         penaltyConfigMsg = penaltyConfigMsg .. reason .. "=" .. amount .. ";"
     end
+    table.insert(messageQueue, {type = "CFG:PENALTIES", message = penaltyConfigMsg})
     
-    print("DEBUG: Sending penalty config (" .. string.len(penaltyConfigMsg) .. " chars): " .. penaltyConfigMsg)
-    local success1 = C_ChatInfo.SendAddonMessage("RaidSanctions", penaltyConfigMsg, channel)
-    print("DEBUG: Penalty config send result: " .. tostring(success1))
-    
-    -- 2. Send session start marker
+    -- 2. Session start marker
     local sessionStartMsg = "CFG:SESSION_START|V:2.0|S:" .. sender .. "|T:" .. timestamp .. "|COUNT:" .. totalPlayers
-    print("DEBUG: Sending session start (" .. string.len(sessionStartMsg) .. " chars): " .. sessionStartMsg)
-    local success2 = C_ChatInfo.SendAddonMessage("RaidSanctions", sessionStartMsg, channel)
-    print("DEBUG: Session start send result: " .. tostring(success2))
+    table.insert(messageQueue, {type = "CFG:SESSION_START", message = sessionStartMsg})
     
-    -- 3. Send individual player messages
-    local playersSent = 0
+    -- 3. Individual player messages
+    local playerCount = 0
     for playerName, playerData in pairs(session.players) do
-        playersSent = playersSent + 1
+        playerCount = playerCount + 1
         
         local playerMsg = "PLAYER|V:2.0|S:" .. sender .. "|T:" .. timestamp .. "|"
         playerMsg = playerMsg .. "N:" .. playerName .. "|"
@@ -1070,8 +1068,6 @@ function UI:SendMultiMessageSync(session, penalties, seasonData)
             playerMsg = playerMsg .. "|"
         end
         
-        print("DEBUG: [" .. playersSent .. "/" .. totalPlayers .. "] Sending player " .. playerName .. " (" .. string.len(playerMsg) .. " chars)")
-        
         -- Check individual message length
         if string.len(playerMsg) > 240 then
             print("WARNING: Player message for " .. playerName .. " is " .. string.len(playerMsg) .. " chars (limit 240)")
@@ -1080,25 +1076,74 @@ function UI:SendMultiMessageSync(session, penalties, seasonData)
             print("DEBUG: Truncated message for " .. playerName .. " to " .. string.len(playerMsg) .. " chars")
         end
         
-        local success = C_ChatInfo.SendAddonMessage("RaidSanctions", playerMsg, channel)
-        print("DEBUG: Player " .. playerName .. " send result: " .. tostring(success))
+        table.insert(messageQueue, {type = "PLAYER", message = playerMsg, playerName = playerName, index = playerCount})
+    end
+    
+    -- 4. Session end marker
+    local sessionEndMsg = "CFG:SESSION_END|V:2.0|S:" .. sender .. "|T:" .. timestamp .. "|SENT:" .. playerCount
+    table.insert(messageQueue, {type = "CFG:SESSION_END", message = sessionEndMsg})
+    
+    print("DEBUG: Message queue prepared with " .. #messageQueue .. " messages. Starting delayed sending...")
+    
+    -- Send messages with delays using our delayed sending function
+    self:SendMessagesWithDelay(messageQueue, channel, timestamp)
+end
+
+function UI:SendMessagesWithDelay(messageQueue, channel, sessionTimestamp)
+    print("DEBUG: SendMessagesWithDelay() called with " .. #messageQueue .. " messages")
+    
+    if not messageQueue or #messageQueue == 0 then
+        print("DEBUG: No messages to send")
+        return
+    end
+    
+    -- Initialize tracking
+    local totalMessages = #messageQueue
+    local sentCount = 0
+    local failedCount = 0
+    
+    -- Send first message immediately
+    local function sendNextMessage(index)
+        if index > totalMessages then
+            print("DEBUG: All " .. totalMessages .. " messages processed. Sent: " .. sentCount .. ", Failed: " .. failedCount)
+            if sentCount == totalMessages then
+                print("Multi-message sync completed successfully! Sent " .. sentCount .. " messages.")
+            else
+                print("Multi-message sync completed with " .. failedCount .. " failures out of " .. totalMessages .. " messages.")
+            end
+            return
+        end
         
-        if not success then
-            print("ERROR: Failed to send player data for " .. playerName)
+        local msgData = messageQueue[index]
+        local success = C_ChatInfo.SendAddonMessage("RaidSanctions", msgData.message, channel)
+        
+        if msgData.type == "PLAYER" then
+            print("DEBUG: [" .. msgData.index .. "/" .. (totalMessages - 3) .. "] Sent player " .. msgData.playerName .. " (" .. string.len(msgData.message) .. " chars) - Result: " .. tostring(success))
+        else
+            print("DEBUG: Sent " .. msgData.type .. " (" .. string.len(msgData.message) .. " chars) - Result: " .. tostring(success))
+        end
+        
+        if success and success ~= 0 then
+            sentCount = sentCount + 1
+        else
+            failedCount = failedCount + 1
+            print("ERROR: Failed to send message " .. index .. " (" .. msgData.type .. ")")
+        end
+        
+        -- Schedule next message with 100ms delay
+        if index < totalMessages then
+            C_Timer.After(0.1, function()
+                sendNextMessage(index + 1)
+            end)
+        else
+            -- Final message sent, complete
+            print("DEBUG: Final message sent, sync session " .. sessionTimestamp .. " complete")
         end
     end
     
-    -- 4. Send session end marker
-    local sessionEndMsg = "CFG:SESSION_END|V:2.0|S:" .. sender .. "|T:" .. timestamp .. "|SENT:" .. playersSent
-    print("DEBUG: Sending session end (" .. string.len(sessionEndMsg) .. " chars): " .. sessionEndMsg)
-    local success3 = C_ChatInfo.SendAddonMessage("RaidSanctions", sessionEndMsg, channel)
-    print("DEBUG: Session end send result: " .. tostring(success3))
-    
-    if success1 and success2 and success3 then
-        print("Multi-message sync completed! Sent " .. playersSent .. " players in individual messages.")
-    else
-        print("Some messages failed to send. Check debug output above.")
-    end
+    -- Start sending
+    print("DEBUG: Starting delayed message sending with 100ms intervals")
+    sendNextMessage(1)
 end
 
 function UI:SerializeSyncData(data)
