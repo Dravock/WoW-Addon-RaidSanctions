@@ -736,7 +736,7 @@ function UI:CreatePenaltiesTabContent(content)
         editBox:SetSize(80, 30)
         editBox:SetPoint("LEFT", label, "RIGHT", 20, 0)
         editBox:SetAutoFocus(false)
-        editBox:SetMaxLetters(8)
+        editBox:SetMaxLetters(10)
         editBox:SetNumeric(true)
         -- Convert from copper to gold for display
         local goldValue = math.floor(amount / 10000)
@@ -803,7 +803,7 @@ function UI:SavePenaltySettings(editBoxes)
     for reason, editBox in pairs(editBoxes) do
         local goldValue = tonumber(editBox:GetText()) or 1 -- Default to 1g if invalid
         if goldValue < 0 then goldValue = 0 end -- No negative values
-        if goldValue > 100 then goldValue = 100 end -- Max 100g
+        if goldValue > 100000 then goldValue = 100000 end -- Max 100k gold (reasonable limit)
         
         -- Convert gold to copper (multiply by 10000)
         local copperValue = goldValue * 10000
