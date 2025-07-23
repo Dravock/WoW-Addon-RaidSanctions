@@ -44,13 +44,21 @@ function Logic:InitializeDatabase()
     -- Global database
     RaidSanctionsDB = RaidSanctionsDB or {
         version = ADDON_VERSION,
-        penalties = DEFAULT_PENALTIES,
+        penalties = {},
         settings = {
             showInCombat = false,
             autoHide = true,
             soundEnabled = true
         }
     }
+    
+    -- Initialize penalties if they don't exist
+    if not RaidSanctionsDB.penalties or next(RaidSanctionsDB.penalties) == nil then
+        RaidSanctionsDB.penalties = {}
+        for reason, amount in pairs(DEFAULT_PENALTIES) do
+            RaidSanctionsDB.penalties[reason] = amount
+        end
+    end
     
     -- Character-specific database
     RaidSanctionsCharDB = RaidSanctionsCharDB or {
@@ -286,6 +294,29 @@ end
 
 function Logic:GetPenalties()
     return RaidSanctionsDB.penalties
+end
+
+function Logic:SetCustomPenalties(newPenalties)
+    -- Validate and set custom penalties
+    if type(newPenalties) ~= "table" then
+        return false
+    end
+    
+    -- Update the database with new penalties
+    for reason, amount in pairs(newPenalties) do
+        if type(reason) == "string" and type(amount) == "number" and amount >= 0 then
+            RaidSanctionsDB.penalties[reason] = amount
+        end
+    end
+    
+    return true
+end
+
+function Logic:ResetPenaltiesToDefault()
+    RaidSanctionsDB.penalties = {}
+    for reason, amount in pairs(DEFAULT_PENALTIES) do
+        RaidSanctionsDB.penalties[reason] = amount
+    end
 end
 
 function Logic:UpdatePenaltiesToEnglish()
