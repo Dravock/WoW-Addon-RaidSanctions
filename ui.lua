@@ -303,12 +303,47 @@ function UI:CreateBottomPanel()
         GameTooltip:Hide()
     end)
     
+    -- "Sync Session" Button
+    local syncButton = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
+    syncButton:SetSize(100, BUTTON_HEIGHT)
+    syncButton:SetPoint("TOPLEFT", 460, managementYOffset)
+    syncButton:SetText("Sync Session")
+    syncButton:GetFontString():SetTextColor(0.2, 1, 1) -- Cyan
+    
+    syncButton:SetScript("OnClick", function()
+        UI:SyncSessionData()
+    end)
+    
+    syncButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Synchronize session data")
+        GameTooltip:AddLine("Sends your current session data to all raid members.", 1, 1, 1)
+        GameTooltip:AddLine("Other players with RaidSanctions will receive your data.", 0.8, 0.8, 0.8)
+        GameTooltip:AddLine("Requires raid leader or assistant permissions.", 1, 0.8, 0.2)
+        GameTooltip:Show()
+    end)
+    syncButton:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    
     mainFrame.bottomPanel = bottomPanel
 end
 
 function UI:SetupEventHandlers()
     -- Note: No keyboard capture for main frame to allow normal gameplay
     -- ESC key handling is removed to allow normal ESC functionality in WoW
+    
+    -- Register for addon communication
+    C_ChatInfo.RegisterAddonMessagePrefix("RaidSanctions_Sync")
+    
+    -- Set up addon message handler
+    local eventFrame = CreateFrame("Frame")
+    eventFrame:RegisterEvent("CHAT_MSG_ADDON")
+    eventFrame:SetScript("OnEvent", function(self, event, prefix, message, distribution, sender)
+        if event == "CHAT_MSG_ADDON" and prefix == "RaidSanctions_Sync" then
+            UI:HandleSyncMessage(message, sender, distribution)
+        end
+    end)
 end
 
 function UI:RefreshPlayerList()
@@ -478,6 +513,9 @@ function UI:UpdateAuthorizationStatus(isAuthorized)
         mainFrame.authStatusLabel:SetText("✗ Not Authorized (Need Leader/Assistant)")
         mainFrame.authStatusLabel:SetTextColor(1, 0.2, 0.2) -- Red
     end
+    
+    -- Update toolbar buttons based on authorization
+    self:SetToolbarButtonsEnabled(isAuthorized)
 end
 
 function UI:IsPlayerInGuild(playerName)
@@ -790,9 +828,8 @@ function UI:SelectPlayer(playerName)
 end
 
 function UI:ApplyPenaltyToSelectedPlayer(reason, amount)
-    -- Check authorization first
+    -- Check authorization first (button should be disabled, but double-check)
     if not self:IsPlayerAuthorized() then
-        print("Error: You must be raid leader or raid assistant to apply penalties.")
         return
     end
     
@@ -809,9 +846,8 @@ function UI:ApplyPenaltyToSelectedPlayer(reason, amount)
 end
 
 function UI:ResetSelectedPlayerPenalties()
-    -- Check authorization first
+    -- Check authorization first (button should be disabled, but double-check)
     if not self:IsPlayerAuthorized() then
-        print("Error: You must be raid leader or raid assistant to reset penalties.")
         return
     end
     
@@ -910,6 +946,212 @@ function UI:PostStatsToRaidChat()
     print("Penalty statistics posted to raid chat (" .. #playersWithPenalties .. " players with penalties).")
 end
 
+function UI:SyncSessionData()
+    -- Check authorization first (button should be disabled, but double-check)
+    if not self:IsPlayerAuthorized() then
+        return
+    end
+    
+    -- Check if we're in a raid or group
+    if not IsInRaid() and not IsInGroup() then
+        print("You must be in a raid or group to sync session data.")
+        return
+    end
+    
+    local session = Logic:GetCurrentSession()
+    if not session or not session.players then
+        print("No session data to sync.")
+        return
+    end
+    
+    -- Prepare sync data
+    local syncData = {
+        version = "1.0",
+        timestamp = time(),
+        sender = UnitName("player"),
+        sessionData = session
+    }
+    
+    -- Convert to string for transmission
+    local dataString = self:SerializeSyncData(syncData)
+    if not dataString then
+        print("Error: Failed to serialize sync data.")
+        return
+    end
+    
+    -- Send via addon communication
+    local channel = IsInRaid() and "RAID" or "PARTY"
+    C_ChatInfo.SendAddonMessage("RaidSanctions_Sync", dataString, channel)
+    
+    print("Session data synchronized to " .. (IsInRaid() and "raid" or "party") .. " members.")
+end
+
+function UI:SerializeSyncData(data)
+    -- Simple serialization for sync data
+    -- In a real implementation, you might want to use a more robust serialization
+    local success, result = pcall(function()
+        local serialized = ""
+        serialized = serialized .. "VERSION:" .. data.version .. "|"
+        serialized = serialized .. "TIMESTAMP:" .. data.timestamp .. "|"
+        serialized = serialized .. "SENDER:" .. data.sender .. "|"
+        serialized = serialized .. "PLAYERS:"
+        
+        for playerName, playerData in pairs(data.sessionData.players) do
+            serialized = serialized .. playerName .. "=" .. (playerData.total or 0) .. ";"
+            if playerData.penalties then
+                for _, penalty in ipairs(playerData.penalties) do
+                    serialized = serialized .. penalty.reason .. ":" .. penalty.amount .. ","
+                end
+            end
+            serialized = serialized .. "#"
+        end
+        
+        return serialized
+    end)
+    
+    return success and result or nil
+end
+
+function UI:DeserializeSyncData(dataString)
+    -- Deserialize sync data
+    local success, result = pcall(function()
+        local data = {players = {}}
+        
+        -- Parse basic info
+        local version = dataString:match("VERSION:([^|]+)")
+        local timestamp = tonumber(dataString:match("TIMESTAMP:([^|]+)"))
+        local sender = dataString:match("SENDER:([^|]+)")
+        
+        if not version or not timestamp or not sender then
+            return nil
+        end
+        
+        -- Parse players data
+        local playersSection = dataString:match("PLAYERS:(.+)")
+        if playersSection then
+            for playerBlock in playersSection:gmatch("([^#]+)") do
+                if playerBlock ~= "" then
+                    local playerName, playerInfo = playerBlock:match("([^=]+)=(.+)")
+                    if playerName and playerInfo then
+                        local total = tonumber(playerInfo:match("^(%d+)"))
+                        local penalties = {}
+                        
+                        -- Parse penalties
+                        local penaltiesSection = playerInfo:match(";(.+)")
+                        if penaltiesSection then
+                            for penaltyInfo in penaltiesSection:gmatch("([^,]+)") do
+                                if penaltyInfo ~= "" then
+                                    local reason, amount = penaltyInfo:match("([^:]+):(%d+)")
+                                    if reason and amount then
+                                        table.insert(penalties, {
+                                            reason = reason,
+                                            amount = tonumber(amount),
+                                            timestamp = timestamp,
+                                            uniqueId = timestamp .. "_" .. math.random(1000, 9999)
+                                        })
+                                    end
+                                end
+                            end
+                        end
+                        
+                        data.players[playerName] = {
+                            total = total,
+                            penalties = penalties,
+                            class = nil -- Will be updated when player joins
+                        }
+                    end
+                end
+            end
+        end
+        
+        return {
+            version = version,
+            timestamp = timestamp,
+            sender = sender,
+            sessionData = data
+        }
+    end)
+    
+    return success and result or nil
+end
+
+function UI:HandleSyncMessage(message, sender, distribution)
+    -- Ignore messages from ourselves
+    if sender == UnitName("player") then
+        return
+    end
+    
+    -- Deserialize the received data
+    local syncData = self:DeserializeSyncData(message)
+    if not syncData then
+        print("Error: Failed to parse sync data from " .. sender)
+        return
+    end
+    
+    -- Show confirmation dialog
+    StaticPopup_Show("RAIDSANCTIONS_SYNC_CONFIRM", sender, syncData)
+end
+
+function UI:ApplySyncData(syncData)
+    -- Apply the synchronized data to current session
+    if not syncData or not syncData.sessionData then
+        print("Error: Invalid sync data.")
+        return
+    end
+    
+    -- Merge with current session data
+    local currentSession = Logic:GetCurrentSession()
+    if not currentSession then
+        currentSession = {players = {}}
+    end
+    
+    local mergedPlayers = 0
+    local updatedPlayers = 0
+    
+    for playerName, syncPlayerData in pairs(syncData.sessionData.players) do
+        if currentSession.players[playerName] then
+            -- Player exists, merge penalties
+            if not currentSession.players[playerName].penalties then
+                currentSession.players[playerName].penalties = {}
+            end
+            
+            -- Add new penalties from sync data
+            if syncPlayerData.penalties then
+                for _, penalty in ipairs(syncPlayerData.penalties) do
+                    -- Check if this penalty already exists (by uniqueId if available)
+                    local exists = false
+                    for _, existingPenalty in ipairs(currentSession.players[playerName].penalties) do
+                        if existingPenalty.uniqueId == penalty.uniqueId then
+                            exists = true
+                            break
+                        end
+                    end
+                    
+                    if not exists then
+                        table.insert(currentSession.players[playerName].penalties, penalty)
+                    end
+                end
+            end
+            
+            -- Recalculate total
+            Logic:RecalculatePlayerTotal(playerName)
+            updatedPlayers = updatedPlayers + 1
+        else
+            -- New player, add completely
+            currentSession.players[playerName] = syncPlayerData
+            mergedPlayers = mergedPlayers + 1
+        end
+    end
+    
+    -- Update the session
+    Logic:SetCurrentSession(currentSession)
+    
+    -- Refresh UI
+    self:RefreshPlayerList()
+    
+    print("Sync complete! Merged " .. mergedPlayers .. " new players, updated " .. updatedPlayers .. " existing players from " .. syncData.sender .. ".")
+end
+
 function UI:Toggle()
     if not mainFrame then
         self:Initialize()
@@ -945,6 +1187,12 @@ function UI:ShowOptionsWindow()
     if not self.optionsFrame then
         self:CreateOptionsWindow()
     end
+    
+    -- Refresh authorization status when showing options
+    self:RefreshOptionsAuthorization()
+    
+    -- Disable main frame buttons while options is open
+    self:SetMainFrameButtonsEnabled(false)
     
     self.optionsFrame:Show()
 end
@@ -997,6 +1245,8 @@ function UI:CreateOptionsWindow()
     optionsCloseButton:SetPoint("TOPRIGHT", -5, -5)
     optionsCloseButton:SetScript("OnClick", function()
         optionsFrame:Hide()
+        -- Re-enable main frame buttons when closing
+        UI:SetMainFrameButtonsEnabled(true)
     end)
     
     -- Create tab system for options
@@ -1095,15 +1345,23 @@ function UI:CreateOptionsWindow()
     optionsFrame:SetScript("OnKeyDown", function(self, key)
         if key == "ESCAPE" then
             self:Hide()
+            -- Re-enable main frame buttons when closing with ESC
+            UI:SetMainFrameButtonsEnabled(true)
         end
     end)
     
     optionsFrame:SetScript("OnShow", function(self)
         self:EnableKeyboard(true) -- Only capture ESC for this frame
+        -- Start authorization monitoring when options window is shown
+        UI:StartOptionsAuthorizationMonitoring()
     end)
     
     optionsFrame:SetScript("OnHide", function(self)
         self:EnableKeyboard(false)
+        -- Stop authorization monitoring when options window is hidden
+        UI:StopOptionsAuthorizationMonitoring()
+        -- Re-enable main frame buttons when options is closed
+        UI:SetMainFrameButtonsEnabled(true)
     end)
     
     -- Hidden by default
@@ -1115,9 +1373,9 @@ end
 
 function UI:CreateSeasonStatsWindow()
     -- Create season stats frame
-    local seasonStatsFrame = CreateFrame("Frame", "RaidSanctionsSeasonStatsFrame", UIParent, "BackdropTemplate")
+    local seasonStatsFrame = CreateFrame("Frame", "RaidSanctionsSeasonStatsFrame", mainFrame, "BackdropTemplate")
     seasonStatsFrame:SetSize(FRAME_WIDTH, FRAME_HEIGHT - 200) -- Kleiner, da keine Tools
-    seasonStatsFrame:SetPoint("CENTER")
+    seasonStatsFrame:SetPoint("CENTER", mainFrame, "CENTER") -- Centered in main window
     seasonStatsFrame:SetFrameStrata("HIGH")
     seasonStatsFrame:SetFrameLevel(200) -- Above main window
     
@@ -1260,37 +1518,47 @@ function UI:SetMainFrameButtonsEnabled(enabled)
         return
     end
     
-    -- Store references to buttons that should be disabled
+    -- Store references to buttons that should be disabled when popups are open
     if not mainFrame.controllableButtons then
         mainFrame.controllableButtons = {}
         
-        -- Find all buttons in main frame (except close button)
+        -- Find all buttons in main frame (except close button and child windows)
         local function findButtons(frame)
             if frame.GetObjectType and frame:GetObjectType() == "Button" then
                 local name = frame:GetName()
-                -- Don't disable close button and specific system buttons
+                -- Don't disable close button, scroll bar buttons, and buttons in child windows
                 if name ~= "RaidSanctionsMainFrameCloseButton" and 
-                   not string.find(name or "", "ScrollBar") then
-                    table.insert(mainFrame.controllableButtons, frame)
+                   not string.find(name or "", "ScrollBar") and
+                   frame:GetParent() ~= self.optionsFrame and
+                   frame:GetParent() ~= self.seasonStatsFrame then
+                    -- Also check if the button is in the bottom panel or header (main UI elements)
+                    local parent = frame:GetParent()
+                    if parent == mainFrame or parent == mainFrame.bottomPanel then
+                        table.insert(mainFrame.controllableButtons, frame)
+                    end
                 end
             end
             
-            -- Check child frames
+            -- Check child frames, but skip options and season stats frames
             local children = {frame:GetChildren()}
             for _, child in ipairs(children) do
-                findButtons(child)
+                if child ~= self.optionsFrame and child ~= self.seasonStatsFrame then
+                    findButtons(child)
+                end
             end
         end
         
         findButtons(mainFrame)
     end
     
-    -- Enable/disable all controllable buttons
+    -- Enable/disable all controllable buttons (for popup windows)
     for _, button in ipairs(mainFrame.controllableButtons) do
         if button:IsObjectType("Button") then
             button:SetEnabled(enabled)
             if enabled then
                 button:SetAlpha(1.0)
+                -- Restore original colors when re-enabling
+                self:RestoreButtonColors(button)
             else
                 button:SetAlpha(0.5) -- Visual indication that button is disabled
             end
@@ -1308,23 +1576,130 @@ function UI:SetMainFrameButtonsEnabled(enabled)
             end
         end
     end
+    
+    -- Store the popup state so authorization system knows
+    mainFrame.popupWindowOpen = not enabled
+    
+    -- Refresh authorization status to apply correct button states
+    if enabled then
+        local isAuthorized = self:IsPlayerAuthorized()
+        self:SetToolbarButtonsEnabled(isAuthorized)
+    end
+end
+
+function UI:SetToolbarButtonsEnabled(enabled)
+    if not mainFrame or not mainFrame.bottomPanel then
+        return
+    end
+    
+    -- Don't override popup window state
+    if mainFrame.popupWindowOpen then
+        return
+    end
+    
+    -- Store references to toolbar buttons that require authorization
+    if not mainFrame.toolbarButtons then
+        mainFrame.toolbarButtons = {}
+        
+        -- Find all buttons in bottom panel that require authorization
+        local function findToolbarButtons(frame)
+            if frame.GetObjectType and frame:GetObjectType() == "Button" then
+                -- Get button text to identify which buttons need authorization
+                local buttonText = frame:GetText()
+                if buttonText then
+                    -- These buttons require authorization
+                    local restrictedButtons = {
+                        "Wrong Gear", "Wrong Tactic", "Late", "Disruption", "AFK",
+                        "Paid", "Post Stats in Raid Chat", "Sync Session"
+                    }
+                    
+                    for _, restrictedText in ipairs(restrictedButtons) do
+                        if buttonText:find(restrictedText) then
+                            table.insert(mainFrame.toolbarButtons, frame)
+                            break
+                        end
+                    end
+                end
+            end
+            
+            -- Check child frames
+            local children = {frame:GetChildren()}
+            for _, child in ipairs(children) do
+                findToolbarButtons(child)
+            end
+        end
+        
+        findToolbarButtons(mainFrame.bottomPanel)
+    end
+    
+    -- Enable/disable toolbar buttons that require authorization
+    for _, button in ipairs(mainFrame.toolbarButtons) do
+        if button:IsObjectType("Button") then
+            button:SetEnabled(enabled)
+            if enabled then
+                button:SetAlpha(1.0)
+                self:RestoreButtonColors(button)
+            else
+                button:SetAlpha(0.4) -- More transparent when disabled
+                button:GetFontString():SetTextColor(0.5, 0.5, 0.5) -- Gray out text
+            end
+        end
+    end
+end
+
+function UI:RestoreButtonColors(button)
+    -- Restore original text color based on button text
+    local buttonText = button:GetText()
+    if buttonText then
+        if buttonText:find("Paid") then
+            button:GetFontString():SetTextColor(0.2, 1, 0.2) -- Green
+        elseif buttonText:find("Whisper Balance") then
+            button:GetFontString():SetTextColor(0.8, 0.8, 1) -- Light blue
+        elseif buttonText:find("Post Stats") then
+            button:GetFontString():SetTextColor(1, 0.8, 0.2) -- Gold
+        elseif buttonText:find("Sync Session") then
+            button:GetFontString():SetTextColor(0.2, 1, 1) -- Cyan
+        else
+            -- Penalty buttons (white text)
+            button:GetFontString():SetTextColor(1, 1, 1) -- White text
+        end
+    end
 end
 
 function UI:CreatePenaltiesTabContent(content)
+    -- Check authorization
+    local isAuthorized = self:IsPlayerAuthorized()
+    
     -- Title for penalties tab
     local title = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     title:SetPoint("TOP", 0, -15)
     title:SetText("Penalty Settings")
     title:SetTextColor(1, 0.8, 0)
     
+    -- Authorization status
+    local authStatus = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    authStatus:SetPoint("TOP", title, "BOTTOM", 0, -5)
+    if isAuthorized then
+        authStatus:SetText("✓ Authorized - You can modify penalty settings")
+        authStatus:SetTextColor(0.2, 1, 0.2) -- Green
+    else
+        authStatus:SetText("✗ Not Authorized - Only raid leaders/assistants can modify penalties")
+        authStatus:SetTextColor(1, 0.2, 0.2) -- Red
+    end
+    
     -- Info text
     local info = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    info:SetPoint("TOP", title, "BOTTOM", 0, -15)
-    info:SetText("Customize penalty amounts (enter values in gold)")
-    info:SetTextColor(0.8, 0.8, 0.8)
+    info:SetPoint("TOP", authStatus, "BOTTOM", 0, -10)
+    if isAuthorized then
+        info:SetText("Customize penalty amounts (enter values in gold)")
+        info:SetTextColor(0.8, 0.8, 0.8)
+    else
+        info:SetText("Current penalty amounts (read-only):")
+        info:SetTextColor(0.6, 0.6, 0.6)
+    end
     
     -- Create penalty input fields
-    local yOffset = -70
+    local yOffset = -85 -- Adjusted for additional status text
     local editBoxes = {}
     
     for reason, amount in pairs(Logic:GetPenalties()) do
@@ -1346,6 +1721,12 @@ function UI:CreatePenaltiesTabContent(content)
         -- Convert from copper to gold for display
         local goldValue = math.floor(amount / 10000)
         editBox:SetText(tostring(goldValue))
+        
+        -- Disable edit box if not authorized
+        if not isAuthorized then
+            editBox:SetEnabled(false)
+            editBox:SetTextColor(0.5, 0.5, 0.5) -- Gray out text
+        end
         
         -- Gold display label
         local goldLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -1374,9 +1755,14 @@ function UI:CreatePenaltiesTabContent(content)
     saveButton:SetText("Save")
     saveButton:GetFontString():SetTextColor(0.2, 1, 0.2)
     
-    saveButton:SetScript("OnClick", function()
-        UI:SavePenaltySettings(editBoxes)
-    end)
+    if isAuthorized then
+        saveButton:SetScript("OnClick", function()
+            UI:SavePenaltySettings(editBoxes)
+        end)
+    else
+        saveButton:SetEnabled(false)
+        saveButton:GetFontString():SetTextColor(0.5, 0.5, 0.5) -- Gray out
+    end
     
     -- Reset to defaults button
     local resetButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
@@ -1385,11 +1771,16 @@ function UI:CreatePenaltiesTabContent(content)
     resetButton:SetText("Reset to 1 Gold")
     resetButton:GetFontString():SetTextColor(1, 0.8, 0.2)
     
-    resetButton:SetScript("OnClick", function()
-        UI:ResetPenaltiesToDefault(editBoxes)
-    end)
+    if isAuthorized then
+        resetButton:SetScript("OnClick", function()
+            UI:ResetPenaltiesToDefault(editBoxes)
+        end)
+    else
+        resetButton:SetEnabled(false)
+        resetButton:GetFontString():SetTextColor(0.5, 0.5, 0.5) -- Gray out
+    end
     
-    -- Post to Raid button
+    -- Post to Raid button (this can be used by everyone to see current config)
     local postRaidButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
     postRaidButton:SetSize(100, 30)
     postRaidButton:SetPoint("LEFT", resetButton, "RIGHT", 10, 0)
@@ -1415,11 +1806,119 @@ function UI:CreatePenaltiesTabContent(content)
     helpText:SetPoint("TOPLEFT", 20, buttonY - 40)
     helpText:SetWidth(400)
     helpText:SetJustifyH("LEFT")
-    helpText:SetText("Note: Changes take effect immediately and will update the UI.\nEnter values in whole gold amounts (e.g., 5 for 5 Gold).")
-    helpText:SetTextColor(0.7, 0.7, 0.7)
+    if isAuthorized then
+        helpText:SetText("Note: Changes take effect immediately and will update the UI.\nEnter values in whole gold amounts (e.g., 5 for 5 Gold).")
+        helpText:SetTextColor(0.7, 0.7, 0.7)
+    else
+        helpText:SetText("You need raid leader or assistant permissions to modify penalty settings.\nYou can still view current settings and post them to raid chat.")
+        helpText:SetTextColor(0.8, 0.4, 0.4) -- Reddish color for warning
+    end
     
     -- Store references
     content.editBoxes = editBoxes
+    content.saveButton = saveButton
+    content.resetButton = resetButton
+    content.authStatus = authStatus
+    content.info = info
+    content.helpText = helpText
+end
+
+function UI:RefreshOptionsAuthorization()
+    -- Only refresh if options frame and penalties tab content exist
+    if not self.optionsFrame or not self.optionsFrame.tabContents or not self.optionsFrame.tabContents[1] then
+        return
+    end
+    
+    local content = self.optionsFrame.tabContents[1] -- Penalties tab is index 1
+    if not content.editBoxes then
+        return
+    end
+    
+    -- Check current authorization
+    local isAuthorized = self:IsPlayerAuthorized()
+    
+    -- Update authorization status text
+    if content.authStatus then
+        if isAuthorized then
+            content.authStatus:SetText("✓ Authorized - You can modify penalty settings")
+            content.authStatus:SetTextColor(0.2, 1, 0.2) -- Green
+        else
+            content.authStatus:SetText("✗ Not Authorized - Only raid leaders/assistants can modify penalties")
+            content.authStatus:SetTextColor(1, 0.2, 0.2) -- Red
+        end
+    end
+    
+    -- Update info text
+    if content.info then
+        if isAuthorized then
+            content.info:SetText("Customize penalty amounts (enter values in gold)")
+            content.info:SetTextColor(0.8, 0.8, 0.8)
+        else
+            content.info:SetText("Current penalty amounts (read-only):")
+            content.info:SetTextColor(0.6, 0.6, 0.6)
+        end
+    end
+    
+    -- Update edit boxes
+    for reason, editBox in pairs(content.editBoxes) do
+        if isAuthorized then
+            editBox:SetEnabled(true)
+            editBox:SetTextColor(1, 1, 1) -- Normal white text
+        else
+            editBox:SetEnabled(false)
+            editBox:SetTextColor(0.5, 0.5, 0.5) -- Gray out text
+        end
+    end
+    
+    -- Update save button
+    if content.saveButton then
+        if isAuthorized then
+            content.saveButton:SetEnabled(true)
+            content.saveButton:GetFontString():SetTextColor(0.2, 1, 0.2) -- Green
+        else
+            content.saveButton:SetEnabled(false)
+            content.saveButton:GetFontString():SetTextColor(0.5, 0.5, 0.5) -- Gray out
+        end
+    end
+    
+    -- Update reset button
+    if content.resetButton then
+        if isAuthorized then
+            content.resetButton:SetEnabled(true)
+            content.resetButton:GetFontString():SetTextColor(1, 0.8, 0.2) -- Orange
+        else
+            content.resetButton:SetEnabled(false)
+            content.resetButton:GetFontString():SetTextColor(0.5, 0.5, 0.5) -- Gray out
+        end
+    end
+    
+    -- Update help text
+    if content.helpText then
+        if isAuthorized then
+            content.helpText:SetText("Note: Changes take effect immediately and will update the UI.\nEnter values in whole gold amounts (e.g., 5 for 5 Gold).")
+            content.helpText:SetTextColor(0.7, 0.7, 0.7)
+        else
+            content.helpText:SetText("You need raid leader or assistant permissions to modify penalty settings.\nYou can still view current settings and post them to raid chat.")
+            content.helpText:SetTextColor(0.8, 0.4, 0.4) -- Reddish color for warning
+        end
+    end
+end
+
+function UI:StartOptionsAuthorizationMonitoring()
+    -- Create or reuse timer for authorization monitoring
+    if not self.authMonitorTimer then
+        self.authMonitorTimer = C_Timer.NewTicker(1.0, function() -- Check every second
+            self:RefreshOptionsAuthorization()
+        end)
+    end
+end
+
+function UI:StopOptionsAuthorizationMonitoring()
+    -- Stop the authorization monitoring timer
+    if self.authMonitorTimer then
+        self.authMonitorTimer:Cancel()
+        self.authMonitorTimer = nil
+    end
 end
 
 function UI:SavePenaltySettings(editBoxes)
@@ -1605,6 +2104,19 @@ StaticPopupDialogs["RAIDSANCTIONS_CLEANUP_RANDOM_CONFIRM"] = {
         RaidSanctions.Logic:CleanupSeasonDataRandomPlayers()
     end,
     timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["RAIDSANCTIONS_SYNC_CONFIRM"] = {
+    text = "Sync session data from '%s'?\n\nThis will merge their penalty data with yours.\nExisting penalties will be preserved.",
+    button1 = "Accept",
+    button2 = "Decline",
+    OnAccept = function(self, data)
+        UI:ApplySyncData(data)
+    end,
+    timeout = 30,
     whileDead = true,
     hideOnEscape = true,
     preferredIndex = 3,
