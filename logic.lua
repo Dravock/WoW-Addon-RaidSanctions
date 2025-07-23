@@ -196,12 +196,16 @@ function Logic:ApplyPenalty(playerName, reason, amount)
     local player = session.players[playerName]
     local timestamp = time()
     
+    -- Create unique ID for this penalty (combining timestamp with random component)
+    local uniqueId = timestamp .. "_" .. math.random(1000, 9999)
+    
     -- Create penalty entry
     local penaltyEntry = {
         reason = reason,
         amount = amount,
         timestamp = timestamp,
-        date = date("%H:%M:%S")
+        date = date("%H:%M:%S"),
+        uniqueId = uniqueId -- Add unique identifier
     }
     
     table.insert(player.penalties, penaltyEntry)
@@ -376,8 +380,9 @@ function Logic:GetSeasonData()
             playerData.processedSessionPenalties = {}
             
             -- Mark all existing penalties as processed to avoid duplicates
-            for _, penalty in ipairs(playerData.penalties or {}) do
-                local penaltyId = penalty.timestamp .. "_" .. penalty.reason .. "_" .. penalty.amount
+            for i, penalty in ipairs(playerData.penalties or {}) do
+                -- Use uniqueId if available, fallback to old system for compatibility
+                local penaltyId = penalty.uniqueId or (penalty.timestamp .. "_" .. penalty.reason .. "_" .. penalty.amount .. "_" .. i)
                 playerData.processedSessionPenalties[penaltyId] = true
             end
         end
@@ -420,9 +425,9 @@ function Logic:UpdateSeasonData()
         end
         
         -- Add new penalties from current session to season data (avoid duplicates)
-        for _, penalty in ipairs(playerData.penalties) do
-            -- Create unique identifier for this penalty
-            local penaltyId = penalty.timestamp .. "_" .. penalty.reason .. "_" .. penalty.amount
+        for i, penalty in ipairs(playerData.penalties) do
+            -- Use uniqueId if available, fallback to old system for compatibility
+            local penaltyId = penalty.uniqueId or (penalty.timestamp .. "_" .. penalty.reason .. "_" .. penalty.amount .. "_" .. i)
             
             -- Check if we've already processed this penalty
             if not seasonPlayer.processedSessionPenalties[penaltyId] then
@@ -432,7 +437,8 @@ function Logic:UpdateSeasonData()
                     amount = penalty.amount,
                     timestamp = penalty.timestamp,
                     date = penalty.date,
-                    sessionId = session.id
+                    sessionId = session.id,
+                    uniqueId = penalty.uniqueId -- Preserve uniqueId
                 })
                 
                 -- Update totals
