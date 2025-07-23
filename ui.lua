@@ -333,17 +333,28 @@ function UI:SetupEventHandlers()
     -- Note: No keyboard capture for main frame to allow normal gameplay
     -- ESC key handling is removed to allow normal ESC functionality in WoW
     
+    print("DEBUG: SetupEventHandlers() called")
+    
     -- Register for addon communication
-    C_ChatInfo.RegisterAddonMessagePrefix("RaidSanctions_Sync")
+    local registerResult = C_ChatInfo.RegisterAddonMessagePrefix("RaidSanctions_Sync")
+    print("DEBUG: RegisterAddonMessagePrefix result: " .. tostring(registerResult))
     
     -- Set up addon message handler
     local eventFrame = CreateFrame("Frame")
     eventFrame:RegisterEvent("CHAT_MSG_ADDON")
+    print("DEBUG: Event frame created and CHAT_MSG_ADDON registered")
+    
     eventFrame:SetScript("OnEvent", function(self, event, prefix, message, distribution, sender)
+        print("DEBUG: Event received - Event: " .. tostring(event) .. ", Prefix: " .. tostring(prefix))
         if event == "CHAT_MSG_ADDON" and prefix == "RaidSanctions_Sync" then
+            print("DEBUG: RaidSanctions_Sync message received, calling HandleSyncMessage")
             UI:HandleSyncMessage(message, sender, distribution)
+        else
+            print("DEBUG: Ignoring event/prefix: " .. tostring(event) .. "/" .. tostring(prefix))
         end
     end)
+    
+    print("DEBUG: Event handler setup complete")
 end
 
 function UI:RefreshPlayerList()
@@ -543,31 +554,45 @@ function UI:IsPlayerInGuild(playerName)
 end
 
 function UI:IsPlayerAuthorized()
+    print("DEBUG: IsPlayerAuthorized() called")
+    
     -- Check if player has permission to use penalty actions
     -- Player must be raid leader or raid assistant
     
-    if IsInRaid() then
+    local inRaid = IsInRaid()
+    local inGroup = IsInGroup()
+    print("DEBUG: IsInRaid(): " .. tostring(inRaid) .. ", IsInGroup(): " .. tostring(inGroup))
+    
+    if inRaid then
         -- In raid: check if player is leader or assistant
         local playerName = UnitName("player")
         local numRaidMembers = GetNumGroupMembers()
+        print("DEBUG: Player name: " .. tostring(playerName) .. ", Raid members: " .. tostring(numRaidMembers))
         
         for i = 1, numRaidMembers do
             local name, rank = GetRaidRosterInfo(i)
             if name then
                 -- Remove realm name if present
                 local raidMemberName = name:match("([^-]+)")
+                print("DEBUG: Checking raid member " .. i .. ": " .. tostring(raidMemberName) .. " (rank: " .. tostring(rank) .. ")")
                 if raidMemberName == playerName then
                     -- Rank 2 = Leader, Rank 1 = Assistant, Rank 0 = Normal member
-                    return rank >= 1
+                    local authorized = rank >= 1
+                    print("DEBUG: Found player in raid, rank: " .. tostring(rank) .. ", authorized: " .. tostring(authorized))
+                    return authorized
                 end
             end
         end
+        print("DEBUG: Player not found in raid roster")
         return false
-    elseif IsInGroup() then
+    elseif inGroup then
         -- In party: check if player is party leader
-        return UnitIsGroupLeader("player")
+        local isLeader = UnitIsGroupLeader("player")
+        print("DEBUG: In party, is leader: " .. tostring(isLeader))
+        return isLeader
     else
         -- Not in group: allow (for testing/solo use)
+        print("DEBUG: Not in group, allowing for solo testing")
         return true
     end
 end
@@ -947,13 +972,21 @@ function UI:PostStatsToRaidChat()
 end
 
 function UI:SyncSessionData()
+    print("DEBUG: SyncSessionData() called")
+    
     -- Check authorization first (button should be disabled, but double-check)
-    if not self:IsPlayerAuthorized() then
+    local isAuthorized = self:IsPlayerAuthorized()
+    print("DEBUG: Authorization check result: " .. tostring(isAuthorized))
+    if not isAuthorized then
+        print("DEBUG: Not authorized, exiting sync")
         return
     end
     
     -- Check if we're in a raid or group
-    if not IsInRaid() and not IsInGroup() then
+    local inRaid = IsInRaid()
+    local inGroup = IsInGroup()
+    print("DEBUG: In raid: " .. tostring(inRaid) .. ", In group: " .. tostring(inGroup))
+    if not inRaid and not inGroup then
         print("You must be in a raid or group to sync data.")
         return
     end
@@ -961,6 +994,21 @@ function UI:SyncSessionData()
     local session = Logic:GetCurrentSession()
     local penalties = Logic:GetPenalties()
     local seasonData = Logic:GetSeasonData()
+    
+    print("DEBUG: Session data exists: " .. tostring(session ~= nil))
+    if session then
+        print("DEBUG: Session has players: " .. tostring(session.players ~= nil))
+        if session.players then
+            local playerCount = 0
+            for _ in pairs(session.players) do
+                playerCount = playerCount + 1
+            end
+            print("DEBUG: Number of players in session: " .. playerCount)
+        end
+    end
+    
+    print("DEBUG: Penalties data exists: " .. tostring(penalties ~= nil))
+    print("DEBUG: Season data exists: " .. tostring(seasonData ~= nil))
     
     if not session or not session.players then
         print("No session data to sync.")
@@ -977,6 +1025,8 @@ function UI:SyncSessionData()
         seasonData = seasonData -- Include season statistics
     }
     
+    print("DEBUG: Sync data prepared, calling SerializeSyncData...")
+    
     -- Convert to string for transmission
     local dataString = self:SerializeSyncData(syncData)
     if not dataString then
@@ -984,31 +1034,46 @@ function UI:SyncSessionData()
         return
     end
     
+    print("DEBUG: Data serialized successfully, length: " .. string.len(dataString))
+    
     -- Send via addon communication
     local channel = IsInRaid() and "RAID" or "PARTY"
-    C_ChatInfo.SendAddonMessage("RaidSanctions_Sync", dataString, channel)
+    print("DEBUG: Sending to channel: " .. channel)
+    
+    local success = C_ChatInfo.SendAddonMessage("RaidSanctions_Sync", dataString, channel)
+    print("DEBUG: SendAddonMessage result: " .. tostring(success))
     
     print("Complete data synchronized to " .. (IsInRaid() and "raid" or "party") .. " members (Session + Penalties + Season Stats).")
 end
 
 function UI:SerializeSyncData(data)
+    print("DEBUG: SerializeSyncData() called")
+    
     -- Enhanced serialization for comprehensive sync data
     local success, result = pcall(function()
+        print("DEBUG: Starting serialization...")
         local serialized = ""
         serialized = serialized .. "VERSION:" .. data.version .. "|"
         serialized = serialized .. "TIMESTAMP:" .. data.timestamp .. "|"
         serialized = serialized .. "SENDER:" .. data.sender .. "|"
         
+        print("DEBUG: Basic info serialized")
+        
         -- Serialize penalty configuration
         if data.penaltyConfig then
+            print("DEBUG: Serializing penalty config...")
             serialized = serialized .. "PENALTIES:"
             for reason, amount in pairs(data.penaltyConfig) do
                 serialized = serialized .. reason .. "=" .. amount .. ";"
             end
             serialized = serialized .. "|"
+            print("DEBUG: Penalty config serialized")
+        else
+            print("DEBUG: No penalty config to serialize")
         end
         
         -- Serialize session data
+        print("DEBUG: Serializing session data...")
         serialized = serialized .. "SESSION:"
         for playerName, playerData in pairs(data.sessionData.players) do
             serialized = serialized .. playerName .. "=" .. (playerData.total or 0) .. ";"
@@ -1020,9 +1085,11 @@ function UI:SerializeSyncData(data)
             serialized = serialized .. "#"
         end
         serialized = serialized .. "|"
+        print("DEBUG: Session data serialized")
         
         -- Serialize season data
         if data.seasonData and data.seasonData.players then
+            print("DEBUG: Serializing season data...")
             serialized = serialized .. "SEASON:"
             for playerName, playerData in pairs(data.seasonData.players) do
                 serialized = serialized .. playerName .. "=" .. (playerData.totalAmount or 0) .. ";"
@@ -1033,12 +1100,22 @@ function UI:SerializeSyncData(data)
                 end
                 serialized = serialized .. "#"
             end
+            print("DEBUG: Season data serialized")
+        else
+            print("DEBUG: No season data to serialize")
         end
         
+        print("DEBUG: Serialization completed, final length: " .. string.len(serialized))
         return serialized
     end)
     
-    return success and result or nil
+    if success then
+        print("DEBUG: Serialization successful")
+        return result
+    else
+        print("DEBUG: Serialization failed with error: " .. tostring(result))
+        return nil
+    end
 end
 
 function UI:DeserializeSyncData(dataString)
@@ -1158,11 +1235,18 @@ function UI:DeserializeSyncData(dataString)
 end
 
 function UI:HandleSyncMessage(message, sender, distribution)
+    print("DEBUG: HandleSyncMessage() called from sender: " .. tostring(sender) .. ", distribution: " .. tostring(distribution))
+    print("DEBUG: Message length: " .. string.len(message))
+    
     -- Ignore messages from ourselves
-    if sender == UnitName("player") then
+    local playerName = UnitName("player")
+    print("DEBUG: Current player: " .. tostring(playerName) .. ", sender: " .. tostring(sender))
+    if sender == playerName then
+        print("DEBUG: Ignoring message from self")
         return
     end
     
+    print("DEBUG: Calling DeserializeSyncData...")
     -- Deserialize the received data
     local syncData = self:DeserializeSyncData(message)
     if not syncData then
@@ -1170,6 +1254,7 @@ function UI:HandleSyncMessage(message, sender, distribution)
         return
     end
     
+    print("DEBUG: Sync data parsed successfully, showing confirmation dialog")
     -- Show confirmation dialog
     StaticPopup_Show("RAIDSANCTIONS_SYNC_CONFIRM", sender, syncData)
 end
