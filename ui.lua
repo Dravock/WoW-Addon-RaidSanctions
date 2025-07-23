@@ -557,9 +557,9 @@ end
 
 function UI:CreateOptionsWindow()
     -- Options-Frame erstellen
-    local optionsFrame = CreateFrame("Frame", "RaidSanctionsOptionsFrame", UIParent, "BackdropTemplate")
+    local optionsFrame = CreateFrame("Frame", "RaidSanctionsOptionsFrame", mainFrame, "BackdropTemplate")
     optionsFrame:SetSize(500, 400)
-    optionsFrame:SetPoint("CENTER", UIParent, "CENTER", 50, 50) -- Leicht versetzt zum Hauptfenster
+    optionsFrame:SetPoint("CENTER", mainFrame, "CENTER") -- Zentriert im Hauptfenster
     optionsFrame:SetFrameStrata("HIGH")
     optionsFrame:SetFrameLevel(200) -- Über dem Hauptfenster
     
@@ -575,16 +575,8 @@ function UI:CreateOptionsWindow()
     optionsFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
     optionsFrame:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
     
-    -- Bewegbar machen
-    optionsFrame:SetMovable(true)
+    -- Nur Mouse-Input aktivieren (nicht bewegbar)
     optionsFrame:EnableMouse(true)
-    optionsFrame:RegisterForDrag("LeftButton")
-    optionsFrame:SetScript("OnDragStart", function(self)
-        self:StartMoving()
-    end)
-    optionsFrame:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-    end)
     
     -- Titel für Options-Frame
     local optionsTitle = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
