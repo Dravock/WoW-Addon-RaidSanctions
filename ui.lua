@@ -1130,9 +1130,9 @@ function UI:SendMessagesWithDelay(messageQueue, channel, sessionTimestamp)
             print("ERROR: Failed to send message " .. index .. " (" .. msgData.type .. ")")
         end
         
-        -- Schedule next message with 100ms delay
+        -- Schedule next message with 200ms delay (increased from 100ms)
         if index < totalMessages then
-            C_Timer.After(0.1, function()
+            C_Timer.After(0.2, function()
                 sendNextMessage(index + 1)
             end)
         else
@@ -1142,7 +1142,7 @@ function UI:SendMessagesWithDelay(messageQueue, channel, sessionTimestamp)
     end
     
     -- Start sending
-    print("DEBUG: Starting delayed message sending with 100ms intervals")
+    print("DEBUG: Starting delayed message sending with 200ms intervals")
     sendNextMessage(1)
 end
 
@@ -1725,12 +1725,49 @@ function UI:HandleMultiSyncMessage(message, sender, distribution)
         self:HandleSyncMessage(message, sender, distribution)
     end
     
-    -- Cleanup old sessions (older than 30 seconds)
+    -- Cleanup old sessions (older than 30 seconds) and check for incomplete sessions
     local currentTime = time()
     for key, session in pairs(self.multiSyncSessions or {}) do
         if currentTime - session.startTime > 30 then
             print("DEBUG: Cleaning up old sync session: " .. key)
             self.multiSyncSessions[key] = nil
+        elseif not session.complete and currentTime - session.startTime > 10 then
+            -- Auto-complete sessions that haven't finished after 10 seconds
+            if session.receivedPlayers > 0 and session.expectedPlayers > 0 then
+                local completionRate = (session.receivedPlayers / session.expectedPlayers) * 100
+                print("DEBUG: Auto-completing incomplete session " .. key .. " after timeout")
+                print("DEBUG: Completion rate: " .. session.receivedPlayers .. "/" .. session.expectedPlayers .. " (" .. string.format("%.1f", completionRate) .. "%)")
+                
+                if completionRate >= 50 then -- At least 50% received
+                    session.complete = true
+                    
+                    -- Convert to standard sync data format
+                    local syncData = {
+                        version = session.version or "2.0",
+                        timestamp = tonumber(session.timestamp) or time(),
+                        sender = session.sender,
+                        sessionData = {players = session.players},
+                        penaltyConfig = session.penaltyConfig,
+                        seasonData = {players = {}}
+                    }
+                    
+                    -- Show confirmation dialog
+                    print("DEBUG: Showing sync confirmation dialog for incomplete session (" .. session.receivedPlayers .. " players)")
+                    local popup = StaticPopup_Show("RAIDSANCTIONS_SYNC_CONFIRM", session.sender)
+                    if popup then
+                        popup.data = syncData
+                        print("DEBUG: Auto-completed sync data stored in popup.data")
+                    else
+                        print("ERROR: Failed to show StaticPopup for auto-completed sync")
+                    end
+                    
+                    -- Clean up session
+                    self.multiSyncSessions[key] = nil
+                else
+                    print("DEBUG: Dropping incomplete session with low completion rate: " .. string.format("%.1f", completionRate) .. "%")
+                    self.multiSyncSessions[key] = nil
+                end
+            end
         end
     end
 end
