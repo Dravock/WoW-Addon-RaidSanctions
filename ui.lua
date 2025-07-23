@@ -81,6 +81,15 @@ function UI:CreateHeader()
     title:SetText("Raid Sanctions")
     title:SetTextColor(1, 0.8, 0)
     
+    -- Optionen-Button (obere linke Ecke)
+    local optionsButton = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
+    optionsButton:SetSize(80, 25)
+    optionsButton:SetText("Optionen")
+    optionsButton:SetPoint("TOPLEFT", 10, -10)
+    optionsButton:SetScript("OnClick", function()
+        UI:ShowOptionsWindow()
+    end)
+    
     -- Schließen-Button
     local closeButton = CreateFrame("Button", nil, mainFrame, "UIPanelCloseButton")
     closeButton:SetPoint("TOPRIGHT", -5, -5)
@@ -536,6 +545,91 @@ function UI:Hide()
     if mainFrame then
         mainFrame:Hide()
     end
+end
+
+function UI:ShowOptionsWindow()
+    if not self.optionsFrame then
+        self:CreateOptionsWindow()
+    end
+    
+    self.optionsFrame:Show()
+end
+
+function UI:CreateOptionsWindow()
+    -- Options-Frame erstellen
+    local optionsFrame = CreateFrame("Frame", "RaidSanctionsOptionsFrame", UIParent, "BackdropTemplate")
+    optionsFrame:SetSize(500, 400)
+    optionsFrame:SetPoint("CENTER", UIParent, "CENTER", 50, 50) -- Leicht versetzt zum Hauptfenster
+    optionsFrame:SetFrameStrata("HIGH")
+    optionsFrame:SetFrameLevel(200) -- Über dem Hauptfenster
+    
+    -- Backdrop für Options-Frame
+    optionsFrame:SetBackdrop({
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true,
+        tileSize = 16,
+        edgeSize = 16,
+        insets = { left = 3, right = 3, top = 3, bottom = 3 }
+    })
+    optionsFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
+    optionsFrame:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+    
+    -- Bewegbar machen
+    optionsFrame:SetMovable(true)
+    optionsFrame:EnableMouse(true)
+    optionsFrame:RegisterForDrag("LeftButton")
+    optionsFrame:SetScript("OnDragStart", function(self)
+        self:StartMoving()
+    end)
+    optionsFrame:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+    end)
+    
+    -- Titel für Options-Frame
+    local optionsTitle = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+    optionsTitle:SetPoint("TOP", 0, -15)
+    optionsTitle:SetText("RaidSanctions - Optionen")
+    optionsTitle:SetTextColor(1, 0.8, 0)
+    
+    -- Schließen-Button für Options-Frame
+    local optionsCloseButton = CreateFrame("Button", nil, optionsFrame, "UIPanelCloseButton")
+    optionsCloseButton:SetPoint("TOPRIGHT", -5, -5)
+    optionsCloseButton:SetScript("OnClick", function()
+        optionsFrame:Hide()
+    end)
+    
+    -- Placeholder-Text für zukünftige Optionen
+    local placeholderText = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    placeholderText:SetPoint("CENTER", 0, 50)
+    placeholderText:SetText("Optionen werden hier implementiert...")
+    placeholderText:SetTextColor(0.8, 0.8, 0.8)
+    
+    local infoText = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    infoText:SetPoint("CENTER", 0, 20)
+    infoText:SetText("Strafen-Konfiguration, UI-Einstellungen, etc.")
+    infoText:SetTextColor(0.6, 0.6, 0.6)
+    
+    -- ESC-Key Handler für Options-Frame
+    optionsFrame:SetScript("OnKeyDown", function(self, key)
+        if key == "ESCAPE" then
+            self:Hide()
+        end
+    end)
+    
+    optionsFrame:SetScript("OnShow", function(self)
+        self:EnableKeyboard(true)
+    end)
+    
+    optionsFrame:SetScript("OnHide", function(self)
+        self:EnableKeyboard(false)
+    end)
+    
+    -- Standardmäßig versteckt
+    optionsFrame:Hide()
+    
+    -- Frame speichern
+    self.optionsFrame = optionsFrame
 end
 
 -- Static Popup für Reset-Bestätigung
