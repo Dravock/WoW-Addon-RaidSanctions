@@ -405,12 +405,14 @@ function UI:RefreshPlayerList()
     local randomPlayers = {}
     
     for playerName, playerData in pairs(session.players) do
-        if self:IsPlayerInGuild(playerName) then
+        if RaidSanctions.Logic:IsPlayerInGuild(playerName) then
             table.insert(guildMembers, {name = playerName, data = playerData})
         else
             table.insert(randomPlayers, {name = playerName, data = playerData})
         end
     end
+    
+    print("DEBUG: RefreshPlayerList() - Guild Members: " .. #guildMembers .. ", Random Players: " .. #randomPlayers)
     
     -- Sort both lists by penalty amount (highest first)
     local sortFunction = function(a, b)
@@ -549,30 +551,6 @@ function UI:UpdateAuthorizationStatus(isAuthorized)
     
     -- Update toolbar buttons based on authorization
     self:SetToolbarButtonsEnabled(isAuthorized)
-end
-
-function UI:IsPlayerInGuild(playerName)
-    -- Check if player is in the same guild as the current player
-    if not IsInGuild() then
-        return false -- Player is not in a guild
-    end
-    
-    -- Get number of guild members
-    local numGuildMembers = GetNumGuildMembers()
-    
-    -- Search through guild roster
-    for i = 1, numGuildMembers do
-        local name = GetGuildRosterInfo(i)
-        if name then
-            -- Remove realm name if present (handle cross-realm players)
-            local guildMemberName = name:match("([^-]+)")
-            if guildMemberName == playerName then
-                return true
-            end
-        end
-    end
-    
-    return false
 end
 
 function UI:IsPlayerAuthorized()
