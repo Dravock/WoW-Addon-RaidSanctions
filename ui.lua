@@ -591,16 +591,92 @@ function UI:CreateOptionsWindow()
         optionsFrame:Hide()
     end)
     
-    -- Placeholder-Text für zukünftige Optionen
-    local placeholderText = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    placeholderText:SetPoint("CENTER", 0, 50)
-    placeholderText:SetText("Optionen werden hier implementiert...")
-    placeholderText:SetTextColor(0.8, 0.8, 0.8)
+    -- Tab-System für Optionen erstellen
+    local tabs = {}
+    local tabContents = {}
+    local activeTab = 1
     
-    local infoText = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    infoText:SetPoint("CENTER", 0, 20)
-    infoText:SetText("Strafen-Konfiguration, UI-Einstellungen, etc.")
-    infoText:SetTextColor(0.6, 0.6, 0.6)
+    -- Tab-Definitionen
+    local tabData = {
+        {name = "Strafen", key = "penalties"},
+        {name = "UI", key = "interface"},
+        {name = "Verhalten", key = "behavior"},
+        {name = "Export", key = "export"}
+    }
+    
+    -- Tab-Buttons erstellen
+    local tabY = -50
+    for i, data in ipairs(tabData) do
+        local tab = CreateFrame("Button", nil, optionsFrame, "UIPanelButtonTemplate")
+        tab:SetSize(100, 30)
+        tab:SetPoint("TOPLEFT", 10 + (i-1) * 105, tabY)
+        tab:SetText(data.name)
+        
+        -- Tab-Click Handler
+        tab:SetScript("OnClick", function()
+            UI:SwitchToOptionsTab(i)
+        end)
+        
+        tabs[i] = tab
+    end
+    
+    -- Content-Bereich für Tab-Inhalte
+    local contentFrame = CreateFrame("Frame", nil, optionsFrame, "BackdropTemplate")
+    contentFrame:SetPoint("TOPLEFT", 10, -85)
+    contentFrame:SetPoint("BOTTOMRIGHT", -10, 10)
+    contentFrame:SetBackdrop({
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true,
+        tileSize = 16,
+        edgeSize = 12,
+        insets = { left = 3, right = 3, top = 3, bottom = 3 }
+    })
+    contentFrame:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
+    contentFrame:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    
+    -- Tab-Inhalte erstellen
+    for i, data in ipairs(tabData) do
+        local content = CreateFrame("Frame", nil, contentFrame)
+        content:SetAllPoints()
+        content:Hide() -- Alle erstmal verstecken
+        
+        -- Titel für jeden Tab
+        local title = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        title:SetPoint("TOP", 0, -15)
+        title:SetText(data.name .. " Einstellungen")
+        title:SetTextColor(1, 0.8, 0)
+        
+        -- Placeholder für Tab-Inhalt
+        local info = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        info:SetPoint("CENTER", 0, 0)
+        info:SetText("Inhalt für " .. data.name .. " wird hier implementiert...")
+        info:SetTextColor(0.7, 0.7, 0.7)
+        
+        tabContents[i] = content
+    end
+    
+    -- Tab-Wechsel Funktion
+    function UI:SwitchToOptionsTab(tabIndex)
+        -- Alle Tabs zurücksetzen
+        for i, tab in ipairs(tabs) do
+            tab:GetFontString():SetTextColor(0.8, 0.8, 0.8)
+            tabContents[i]:Hide()
+        end
+        
+        -- Aktiven Tab hervorheben
+        tabs[tabIndex]:GetFontString():SetTextColor(1, 1, 1)
+        tabContents[tabIndex]:Show()
+        activeTab = tabIndex
+    end
+    
+    -- Ersten Tab standardmäßig aktivieren
+    UI:SwitchToOptionsTab(1)
+    
+    -- Referenzen im Frame speichern
+    optionsFrame.tabs = tabs
+    optionsFrame.tabContents = tabContents
+    optionsFrame.contentFrame = contentFrame
     
     -- ESC-Key Handler für Options-Frame
     optionsFrame:SetScript("OnKeyDown", function(self, key)
