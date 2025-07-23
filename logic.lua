@@ -19,11 +19,11 @@ local DEBUG_MODE = false
 
 -- Default penalties (can be configured)
 local DEFAULT_PENALTIES = {
-    ["Late"] = 10000,
-    ["AFK"] = 5000,
-    ["Wrong Gear"] = 7500,
-    ["Wrong Tactic"] = 3000,
-    ["Disruption"] = 2500
+    ["Late"] = 10000,          -- 1g
+    ["AFK"] = 10000,           -- 1g
+    ["Wrong Gear"] = 10000,    -- 1g
+    ["Wrong Tactic"] = 10000,  -- 1g
+    ["Disruption"] = 10000     -- 1g
 }
 
 -- Localization
@@ -275,35 +275,13 @@ end
 
 function Logic:FormatGold(amount)
     local gold = math.floor(amount / 10000)
-    local silver = math.floor((amount % 10000) / 100)
-    local copper = amount % 100
     
-    local result = ""
-    
+    -- Always display as gold only
     if gold > 0 then
-        result = result .. gold .. "g"
+        return gold .. "g"
+    else
+        return "0g"
     end
-    
-    if silver > 0 then
-        if result ~= "" then
-            result = result .. " "
-        end
-        result = result .. silver .. "s"
-    end
-    
-    if copper > 0 then
-        if result ~= "" then
-            result = result .. " "
-        end
-        result = result .. copper .. "c"
-    end
-    
-    -- If everything is 0
-    if result == "" then
-        result = "0c"
-    end
-    
-    return result
 end
 
 function Logic:GetPenalties()
