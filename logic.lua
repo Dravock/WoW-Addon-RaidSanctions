@@ -547,5 +547,40 @@ function Logic:OnGroupRosterUpdate()
     end
 end
 
+function Logic:CleanupSeasonDataRandomPlayers()
+    -- Clean up season data by removing random players with 0 penalties
+    -- Guild members are always kept regardless of penalty amount
+    local seasonData = self:GetSeasonData()
+    local removedCount = 0
+    
+    local playersToRemove = {}
+    
+    for playerName, playerData in pairs(seasonData) do
+        -- Check if player is NOT a guild member and has no penalties
+        local isGuildMember = self:IsPlayerInGuild(playerName)
+        
+        if not isGuildMember and (playerData.totalAmount or 0) == 0 then
+            table.insert(playersToRemove, playerName)
+        end
+    end
+    
+    -- Remove players from season data
+    for _, playerName in ipairs(playersToRemove) do
+        seasonData[playerName] = nil
+        removedCount = removedCount + 1
+    end
+    
+    -- Save updated season data
+    if removedCount > 0 then
+        -- Season data is already modified in place, no need to save separately
+        print("RaidSanctions: Cleaned up " .. removedCount .. " random players with 0 penalties from season data.")
+        
+        -- Refresh season stats window if it's open
+        if RaidSanctions.UI and RaidSanctions.UI.seasonStatsFrame and RaidSanctions.UI.seasonStatsFrame:IsShown() then
+            RaidSanctions.UI:RefreshSeasonPlayerList()
+        end
+    end
+end
+
 -- Export for other modules
 RaidSanctions.Logic = Logic

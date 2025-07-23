@@ -1138,6 +1138,28 @@ function UI:CreateSeasonStatsWindow()
         StaticPopup_Show("RAIDSANCTIONS_CLEAR_SEASON_CONFIRM")
     end)
     
+    -- Cleanup Random Players button
+    local cleanupButton = CreateFrame("Button", nil, seasonStatsFrame, "UIPanelButtonTemplate")
+    cleanupButton:SetSize(180, 25)
+    cleanupButton:SetPoint("BOTTOMRIGHT", clearButton, "BOTTOMLEFT", -10, 0)
+    cleanupButton:SetText("Cleanup Random (0g)")
+    cleanupButton:GetFontString():SetTextColor(1, 0.8, 0.2) -- Gold color
+    cleanupButton:SetScript("OnClick", function()
+        StaticPopup_Show("RAIDSANCTIONS_CLEANUP_RANDOM_CONFIRM")
+    end)
+    
+    -- Tooltip for cleanup button
+    cleanupButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Cleanup Random Players")
+        GameTooltip:AddLine("Removes all random players (non-guild) with 0 penalties from season data.", 1, 1, 1)
+        GameTooltip:AddLine("Guild members are always kept regardless of penalty amount.", 0.8, 0.8, 0.8)
+        GameTooltip:Show()
+    end)
+    cleanupButton:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    
     -- Store references
     seasonStatsFrame.scrollFrame = scrollFrame
     seasonStatsFrame.contentFrame = contentFrame
@@ -1386,6 +1408,19 @@ StaticPopupDialogs["RAIDSANCTIONS_CLEAR_SEASON_CONFIRM"] = {
         if RaidSanctions.UI and RaidSanctions.UI.RefreshSeasonPlayerList then
             RaidSanctions.UI:RefreshSeasonPlayerList()
         end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["RAIDSANCTIONS_CLEANUP_RANDOM_CONFIRM"] = {
+    text = "Cleanup Random Players with 0 penalties?\n\nThis will remove all non-guild players with 0 Gold from season data.\nGuild members will be kept regardless of penalty amount.",
+    button1 = "Cleanup",
+    button2 = "Cancel",
+    OnAccept = function()
+        RaidSanctions.Logic:CleanupSeasonDataRandomPlayers()
     end,
     timeout = 0,
     whileDead = true,
