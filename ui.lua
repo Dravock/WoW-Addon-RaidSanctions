@@ -1099,16 +1099,6 @@ function UI:SendMultiMessageSync(session, penalties, seasonData)
     -- Send messages with delays using our delayed sending function
     self:SendMessagesWithDelay(messageQueue, channel, timestamp)
 end
-    
-    -- 4. Session end marker
-    local sessionEndMsg = "CFG:SESSION_END|V:2.0|S:" .. sender .. "|T:" .. timestamp .. "|SENT:" .. playerCount
-    table.insert(messageQueue, {type = "CFG:SESSION_END", message = sessionEndMsg})
-    
-    print("DEBUG: Message queue prepared with " .. #messageQueue .. " messages. Starting delayed sending...")
-    
-    -- Send messages with delays using our delayed sending function
-    self:SendMessagesWithDelay(messageQueue, channel, timestamp)
-end
 
 function UI:SendMessagesWithDelay(messageQueue, channel, sessionTimestamp)
     print("DEBUG: SendMessagesWithDelay() called with " .. #messageQueue .. " messages")
