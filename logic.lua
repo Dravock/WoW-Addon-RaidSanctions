@@ -462,23 +462,8 @@ function Logic:GetSeasonPlayersByCategory()
     local guildPlayers = {}
     local randomPlayers = {}
     
-    -- Get current guild name
-    local guildName = GetGuildInfo("player")
-    
     for playerName, playerData in pairs(seasonData) do
-        local isGuildMember = false
-        
-        -- Check if player is in our guild
-        if guildName then
-            local numGuildMembers = GetNumGuildMembers()
-            for i = 1, numGuildMembers do
-                local name = GetGuildRosterInfo(i)
-                if name and name == playerName then
-                    isGuildMember = true
-                    break
-                end
-            end
-        end
+        local isGuildMember = self:IsPlayerInGuild(playerName)
         
         local playerInfo = {
             name = playerName,
@@ -501,6 +486,30 @@ function Logic:GetSeasonPlayersByCategory()
     table.sort(randomPlayers, function(a, b) return a.totalAmount > b.totalAmount end)
     
     return guildPlayers, randomPlayers
+end
+
+function Logic:IsPlayerInGuild(playerName)
+    -- Check if player is in the same guild as the current player
+    if not IsInGuild() then
+        return false -- Player is not in a guild
+    end
+    
+    -- Get number of guild members
+    local numGuildMembers = GetNumGuildMembers()
+    
+    -- Search through guild roster
+    for i = 1, numGuildMembers do
+        local name = GetGuildRosterInfo(i)
+        if name then
+            -- Remove realm name if present (handle cross-realm players)
+            local guildMemberName = name:match("([^-]+)")
+            if guildMemberName == playerName then
+                return true
+            end
+        end
+    end
+    
+    return false
 end
 
 -- Event handlers
