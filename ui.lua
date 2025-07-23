@@ -328,6 +328,10 @@ function UI:RefreshPlayerList()
         return
     end
     
+    -- Check authorization and update UI accordingly
+    local isAuthorized = self:IsPlayerAuthorized()
+    self:UpdateAuthorizationStatus(isAuthorized)
+    
     -- Separate players by guild membership
     local guildMembers = {}
     local randomPlayers = {}
@@ -456,6 +460,26 @@ function UI:RefreshSeasonPlayerList()
     seasonFrame.contentFrame:SetHeight(math.max(contentHeight, seasonFrame.scrollFrame:GetHeight()))
 end
 
+function UI:UpdateAuthorizationStatus(isAuthorized)
+    if not mainFrame or not mainFrame.bottomPanel then
+        return
+    end
+    
+    -- Create or update authorization status label
+    if not mainFrame.authStatusLabel then
+        mainFrame.authStatusLabel = mainFrame.bottomPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        mainFrame.authStatusLabel:SetPoint("TOPRIGHT", -10, -8)
+    end
+    
+    if isAuthorized then
+        mainFrame.authStatusLabel:SetText("✓ Authorized (Leader/Assistant)")
+        mainFrame.authStatusLabel:SetTextColor(0.2, 1, 0.2) -- Green
+    else
+        mainFrame.authStatusLabel:SetText("✗ Not Authorized (Need Leader/Assistant)")
+        mainFrame.authStatusLabel:SetTextColor(1, 0.2, 0.2) -- Red
+    end
+end
+
 function UI:IsPlayerInGuild(playerName)
     -- Check if player is in the same guild as the current player
     if not IsInGuild() then
@@ -478,6 +502,36 @@ function UI:IsPlayerInGuild(playerName)
     end
     
     return false
+end
+
+function UI:IsPlayerAuthorized()
+    -- Check if player has permission to use penalty actions
+    -- Player must be raid leader or raid assistant
+    
+    if IsInRaid() then
+        -- In raid: check if player is leader or assistant
+        local playerName = UnitName("player")
+        local numRaidMembers = GetNumGroupMembers()
+        
+        for i = 1, numRaidMembers do
+            local name, rank = GetRaidRosterInfo(i)
+            if name then
+                -- Remove realm name if present
+                local raidMemberName = name:match("([^-]+)")
+                if raidMemberName == playerName then
+                    -- Rank 2 = Leader, Rank 1 = Assistant, Rank 0 = Normal member
+                    return rank >= 1
+                end
+            end
+        end
+        return false
+    elseif IsInGroup() then
+        -- In party: check if player is party leader
+        return UnitIsGroupLeader("player")
+    else
+        -- Not in group: allow (for testing/solo use)
+        return true
+    end
 end
 
 function UI:CreateSectionHeader(title, yOffset)
@@ -692,10 +746,22 @@ function UI:CreateSeasonPlayerRow(playerName, playerData, yOffset, parentFrame)
 end
 
 function UI:ShowResetConfirmation()
+    -- Check authorization first
+    if not self:IsPlayerAuthorized() then
+        print("Error: You must be raid leader or raid assistant to reset session data.")
+        return
+    end
+    
     StaticPopup_Show("RAIDSANCTIONS_RESET_CONFIRM")
 end
 
 function UI:ShowAddPlayerDialog()
+    -- Check authorization first
+    if not self:IsPlayerAuthorized() then
+        print("Error: You must be raid leader or raid assistant to add players manually.")
+        return
+    end
+    
     StaticPopup_Show("RAIDSANCTIONS_ADD_PLAYER")
 end
 
@@ -724,6 +790,12 @@ function UI:SelectPlayer(playerName)
 end
 
 function UI:ApplyPenaltyToSelectedPlayer(reason, amount)
+    -- Check authorization first
+    if not self:IsPlayerAuthorized() then
+        print("Error: You must be raid leader or raid assistant to apply penalties.")
+        return
+    end
+    
     if not selectedPlayer then
         print("No player selected! Click on a player in the list first.")
         return
@@ -737,6 +809,12 @@ function UI:ApplyPenaltyToSelectedPlayer(reason, amount)
 end
 
 function UI:ResetSelectedPlayerPenalties()
+    -- Check authorization first
+    if not self:IsPlayerAuthorized() then
+        print("Error: You must be raid leader or raid assistant to reset penalties.")
+        return
+    end
+    
     if not selectedPlayer then
         print("No player selected! Click on a player in the list first.")
         return
