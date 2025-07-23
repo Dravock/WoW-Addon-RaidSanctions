@@ -19,7 +19,7 @@ local FRAME_HEIGHT = 700  -- Mehr Höhe für Button-Leiste unten
 local ROW_HEIGHT = 30
 local BUTTON_WIDTH = 80
 local BUTTON_HEIGHT = 25
-local BOTTOM_PANEL_HEIGHT = 80  -- Höhe für Button-Leiste
+local BOTTOM_PANEL_HEIGHT = 110  -- Mehr Höhe für zwei Button-Reihen
 
 -- Lokale UI-Variablen
 local mainFrame = nil
@@ -174,15 +174,15 @@ function UI:CreateBottomPanel()
     -- "Aktionen:" Label
     local actionsLabel = bottomPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     actionsLabel:SetPoint("TOPLEFT", 10, -8)
-    actionsLabel:SetText("Aktionen:")
+    actionsLabel:SetText("Strafen:")
     actionsLabel:SetTextColor(1, 0.8, 0)
     
-    -- Penalty-Buttons erstellen
+    -- ERSTE REIHE: Penalty-Buttons
     local xOffset = 10
     local yOffset = -30
     for reason, amount in pairs(Logic:GetPenalties()) do
         local button = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-        button:SetSize(140, BUTTON_HEIGHT) -- Deutlich breitere Buttons
+        button:SetSize(140, BUTTON_HEIGHT)
         button:SetPoint("TOPLEFT", xOffset, yOffset)
         button:SetText(reason .. " (" .. Logic:FormatGold(amount) .. ")")
         
@@ -203,12 +203,65 @@ function UI:CreateBottomPanel()
             GameTooltip:Hide()
         end)
         
-        xOffset = xOffset + 150 -- Mehr Abstand zwischen Buttons
+        xOffset = xOffset + 150
         if xOffset > FRAME_WIDTH - 160 then -- Nächste Zeile
             xOffset = 10
             yOffset = yOffset - 30
         end
     end
+    
+    -- "Verwaltung:" Label für zweite Reihe
+    local managementLabel = bottomPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    managementLabel:SetPoint("TOPLEFT", 10, -60)
+    managementLabel:SetText("Verwaltung:")
+    managementLabel:SetTextColor(1, 0.8, 0)
+    
+    -- ZWEITE REIHE: Management-Buttons
+    local managementYOffset = -80
+    
+    -- "Bezahlt" Button
+    local paidButton = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
+    paidButton:SetSize(120, BUTTON_HEIGHT)
+    paidButton:SetPoint("TOPLEFT", 10, managementYOffset)
+    paidButton:SetText("Bezahlt")
+    paidButton:GetFontString():SetTextColor(0.2, 1, 0.2) -- Grün
+    
+    paidButton:SetScript("OnClick", function()
+        UI:ResetSelectedPlayerPenalties()
+    end)
+    
+    paidButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Spieler als bezahlt markieren")
+        GameTooltip:AddLine("Setzt alle Strafen des ausgewählten Spielers zurück.", 1, 1, 1)
+        GameTooltip:AddLine("Verwende dies, wenn der Spieler seine Schulden beglichen hat.", 0.8, 0.8, 0.8)
+        GameTooltip:Show()
+    end)
+    paidButton:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    
+    -- "Whisper Balance" Button
+    local whisperButton = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
+    whisperButton:SetSize(140, BUTTON_HEIGHT)
+    whisperButton:SetPoint("TOPLEFT", 140, managementYOffset)
+    whisperButton:SetText("Whisper Balance")
+    whisperButton:GetFontString():SetTextColor(0.8, 0.8, 1) -- Hellblau
+    
+    whisperButton:SetScript("OnClick", function()
+        UI:WhisperPlayerBalance()
+    end)
+    
+    whisperButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Strafe per Whisper senden")
+        GameTooltip:AddLine("Sendet dem ausgewählten Spieler seine aktuelle Strafe per Whisper.", 1, 1, 1)
+        GameTooltip:AddLine("Zeigt alle Strafen und die Gesamtsumme an.", 0.8, 0.8, 0.8)
+        GameTooltip:Show()
+    end)
+    whisperButton:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
     
     mainFrame.bottomPanel = bottomPanel
 end
@@ -400,6 +453,60 @@ function UI:ApplyPenaltyToSelectedPlayer(reason, amount)
     end
 end
 
+function UI:ResetSelectedPlayerPenalties()
+    if not selectedPlayer then
+        print("Kein Spieler ausgewählt! Klicke zuerst auf einen Spieler in der Liste.")
+        return
+    end
+    
+    -- Bestätigungsdialog anzeigen
+    StaticPopup_Show("RAIDSANCTIONS_PLAYER_PAID_CONFIRM", selectedPlayer)
+end
+
+function UI:WhisperPlayerBalance()
+    if not selectedPlayer then
+        print("Kein Spieler ausgewählt! Klicke zuerst auf einen Spieler in der Liste.")
+        return
+    end
+    
+    local session = Logic:GetCurrentSession()
+    if not session or not session.players[selectedPlayer] then
+        print("Keine Daten für Spieler " .. selectedPlayer .. " gefunden.")
+        return
+    end
+    
+    local playerData = session.players[selectedPlayer]
+    
+    -- Whisper-Nachricht erstellen
+    if playerData.total > 0 then
+        local penaltyDetails = {}
+        local penaltyCounts = {}
+        
+        -- Strafen zählen
+        if playerData.penalties then
+            for _, penalty in ipairs(playerData.penalties) do
+                penaltyCounts[penalty.reason] = (penaltyCounts[penalty.reason] or 0) + 1
+            end
+        end
+        
+        -- Details-String erstellen
+        for reason, count in pairs(penaltyCounts) do
+            table.insert(penaltyDetails, count .. "x " .. reason)
+        end
+        
+        local detailsText = table.concat(penaltyDetails, ", ")
+        local totalText = Logic:FormatGold(playerData.total)
+        
+        -- Whisper senden (vereinfachte Nachricht ohne problematische Zeichen)
+        local message = "RaidSanctions Strafen " .. detailsText .. " Gesamt " .. totalText
+        SendChatMessage(message, "WHISPER", nil, selectedPlayer)
+        print("Strafe-Details an " .. selectedPlayer .. " gewhispert: " .. totalText)
+    else
+        SendChatMessage("RaidSanctions Du hast keine ausstehenden Strafen", "WHISPER", nil, selectedPlayer)
+        print("Bestätigung an " .. selectedPlayer .. " gesendet: Keine Strafen.")
+    end
+end
+
 function UI:Toggle()
     if not mainFrame then
         self:Initialize()
@@ -475,6 +582,24 @@ StaticPopupDialogs["RAIDSANCTIONS_ADD_PLAYER"] = {
     end,
     EditBoxOnEscapePressed = function(self)
         self:GetParent():Hide()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+-- Static Popup für Spieler als bezahlt markieren
+StaticPopupDialogs["RAIDSANCTIONS_PLAYER_PAID_CONFIRM"] = {
+    text = "Spieler '%s' als bezahlt markieren?\n\nAlle Strafen werden zurückgesetzt.",
+    button1 = "Bezahlt",
+    button2 = "Abbrechen",
+    OnAccept = function()
+        if Logic:ResetPlayerPenalties(selectedPlayer) then
+            UI:RefreshPlayerList()
+        else
+            print("Fehler beim Zurücksetzen der Spielerstrafen.")
+        end
     end,
     timeout = 0,
     whileDead = true,

@@ -203,6 +203,24 @@ function Logic:ResetSessionData()
     print(L["DATA_RESET"])
 end
 
+function Logic:ResetPlayerPenalties(playerName)
+    if not playerName then
+        return false
+    end
+    
+    local session = self:GetCurrentSession()
+    if not session or not session.players[playerName] then
+        return false
+    end
+    
+    -- Spielerdaten zurücksetzen
+    session.players[playerName].penalties = {}
+    session.players[playerName].total = 0
+    
+    print("Strafen für " .. playerName .. " wurden zurückgesetzt - Spieler als bezahlt markiert.")
+    return true
+end
+
 function Logic:AddPlayerManually(playerName)
     if not playerName or playerName:trim() == "" then
         return false
