@@ -1,27 +1,27 @@
--- UI-Management für RaidSanctions Addon
--- Behandelt alle UI-Operationen und Interface-Interaktionen
+-- UI Management for RaidSanctions Addon
+-- Handles all UI operations and interface interactions
 
 local addonName, addonTable = ...
 
--- UI-Namespace
+-- UI Namespace
 RaidSanctions = RaidSanctions or {}
 RaidSanctions.UI = {}
 
--- Lokale Referenzen
+-- Local references
 local UI = RaidSanctions.UI
 local Logic = RaidSanctions.Logic
 local format = string.format
 local pairs, ipairs = pairs, ipairs
 
--- UI-Konstanten
+-- UI Constants
 local FRAME_WIDTH = 800
-local FRAME_HEIGHT = 700  -- Mehr Höhe für Button-Leiste unten
+local FRAME_HEIGHT = 700  -- More height for bottom button bar
 local ROW_HEIGHT = 30
 local BUTTON_WIDTH = 80
 local BUTTON_HEIGHT = 25
-local BOTTOM_PANEL_HEIGHT = 110  -- Mehr Höhe für zwei Button-Reihen
+local BOTTOM_PANEL_HEIGHT = 110  -- More height for two button rows
 
--- Lokale UI-Variablen
+-- Local UI variables
 local mainFrame = nil
 local playerRows = {}
 local headerButtons = {}
@@ -29,7 +29,7 @@ local selectedPlayer = nil
 
 function UI:Initialize()
     if mainFrame then
-        return -- Bereits initialisiert
+        return -- Already initialized
     end
     
     self:CreateMainFrame()
@@ -40,14 +40,14 @@ function UI:Initialize()
 end
 
 function UI:CreateMainFrame()
-    -- Hauptframe mit verbessertem Styling
+    -- Main frame with improved styling
     mainFrame = CreateFrame("Frame", "RaidSanctionsMainFrame", UIParent, "BackdropTemplate")
     mainFrame:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
     mainFrame:SetPoint("CENTER")
     mainFrame:SetFrameStrata("MEDIUM")
     mainFrame:SetFrameLevel(100)
     
-    -- Backdrop mit modernem Design
+    -- Backdrop with modern design
     mainFrame:SetBackdrop({
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -59,7 +59,7 @@ function UI:CreateMainFrame()
     mainFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
     mainFrame:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
     
-    -- Bewegbar machen
+    -- Make movable
     mainFrame:SetMovable(true)
     mainFrame:EnableMouse(true)
     mainFrame:RegisterForDrag("LeftButton")
@@ -70,34 +70,34 @@ function UI:CreateMainFrame()
         self:StopMovingOrSizing()
     end)
     
-    -- Standardmäßig versteckt
+    -- Hidden by default
     mainFrame:Hide()
 end
 
 function UI:CreateHeader()
-    -- Titel
+    -- Title
     local title = mainFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
     title:SetPoint("TOP", 0, -15)
     title:SetText("Raid Sanctions")
     title:SetTextColor(1, 0.8, 0)
     
-    -- Optionen-Button (obere linke Ecke)
+    -- Options button (top left corner)
     local optionsButton = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
     optionsButton:SetSize(80, 25)
-    optionsButton:SetText("Optionen")
+    optionsButton:SetText("Options")
     optionsButton:SetPoint("TOPLEFT", 10, -10)
     optionsButton:SetScript("OnClick", function()
         UI:ShowOptionsWindow()
     end)
     
-    -- Schließen-Button
+    -- Close button
     local closeButton = CreateFrame("Button", nil, mainFrame, "UIPanelCloseButton")
     closeButton:SetPoint("TOPRIGHT", -5, -5)
     closeButton:SetScript("OnClick", function()
         mainFrame:Hide()
     end)
     
-    -- Reset-Button
+    -- Reset button
     local resetButton = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
     resetButton:SetSize(80, 25)
     resetButton:SetText("Reset")
@@ -106,7 +106,7 @@ function UI:CreateHeader()
         UI:ShowResetConfirmation()
     end)
     
-    -- Raid Hinzufügen Button
+    -- Add Raid Button
     local addPlayerButton = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
     addPlayerButton:SetSize(100, 25)
     addPlayerButton:SetText("Add Player")
@@ -115,47 +115,47 @@ function UI:CreateHeader()
         UI:ShowAddPlayerDialog()
     end)
     
-    -- Header-Zeile für Spaltenüberschriften
+    -- Header row for column titles
     local headerFrame = CreateFrame("Frame", nil, mainFrame)
     headerFrame:SetSize(FRAME_WIDTH - 20, 25)
     headerFrame:SetPoint("TOPLEFT", 10, -50)
     
-    -- Spielername-Label
+    -- Player name label
     local nameHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     nameHeader:SetPoint("LEFT", 5, 0)
-    nameHeader:SetText("Spieler")
+    nameHeader:SetText("Player")
     nameHeader:SetTextColor(0.8, 0.8, 0.8)
     
-    -- Penalty-Headers dynamisch erstellen (jetzt als Counter)
+    -- Create penalty headers dynamically (now as counter)
     local xOffset = 150
     for reason, amount in pairs(Logic:GetPenalties()) do
         local header = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         header:SetPoint("LEFT", xOffset, 0)
         header:SetText(reason) -- Nur Penalty-Name, Counter kommen in die Zeilen
         header:SetTextColor(0.8, 0.8, 0.8)
-        header:SetWidth(BUTTON_WIDTH) -- Breite setzen für Zentrierung
-        header:SetJustifyH("CENTER") -- Zentrierte Ausrichtung
+        header:SetWidth(BUTTON_WIDTH) -- Set width for centering
+        header:SetJustifyH("CENTER") -- Centered alignment
         headerButtons[reason] = header
         xOffset = xOffset + (BUTTON_WIDTH + 15)
     end
     
-    -- Gesamt-Header
+    -- Total header
     local totalHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     totalHeader:SetPoint("RIGHT", -10, 0)
-    totalHeader:SetText("Gesamt")
+    totalHeader:SetText("Total")
     totalHeader:SetTextColor(0.8, 0.8, 0.8)
-    totalHeader:SetWidth(120) -- Breite setzen für Zentrierung
-    totalHeader:SetJustifyH("CENTER") -- Zentrierte Ausrichtung
+    totalHeader:SetWidth(120) -- Set width for centering
+    totalHeader:SetJustifyH("CENTER") -- Centered alignment
 end
 
 function UI:CreateScrollFrame()
-    -- Scroll-Container für Spielerliste (jetzt mit Platz für Bottom-Panel)
+    -- Scroll container for player list (now with space for bottom panel)
     local scrollFrame = CreateFrame("ScrollFrame", nil, mainFrame, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", 10, -80)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -30, BOTTOM_PANEL_HEIGHT + 10) -- Platz für Button-Panel
+    scrollFrame:SetPoint("BOTTOMRIGHT", -30, BOTTOM_PANEL_HEIGHT + 10) -- Space for button panel
     
     local contentFrame = CreateFrame("Frame", nil, scrollFrame)
-    contentFrame:SetSize(FRAME_WIDTH - 50, 1) -- Höhe wird dynamisch angepasst
+    contentFrame:SetSize(FRAME_WIDTH - 50, 1) -- Height is adjusted dynamically
     scrollFrame:SetScrollChild(contentFrame)
     
     mainFrame.scrollFrame = scrollFrame
@@ -163,12 +163,12 @@ function UI:CreateScrollFrame()
 end
 
 function UI:CreateBottomPanel()
-    -- Bottom-Panel für Penalty-Buttons
+    -- Bottom panel for penalty buttons
     local bottomPanel = CreateFrame("Frame", nil, mainFrame, "BackdropTemplate")
     bottomPanel:SetSize(FRAME_WIDTH - 20, BOTTOM_PANEL_HEIGHT)
     bottomPanel:SetPoint("BOTTOMLEFT", 10, 10)
     
-    -- Panel-Hintergrund
+    -- Panel background
     bottomPanel:SetBackdrop({
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -180,10 +180,10 @@ function UI:CreateBottomPanel()
     bottomPanel:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
     bottomPanel:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
     
-    -- "Aktionen:" Label
+    -- "Penalties:" Label
     local actionsLabel = bottomPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     actionsLabel:SetPoint("TOPLEFT", 10, -8)
-    actionsLabel:SetText("Strafen:")
+    actionsLabel:SetText("Penalties:")
     actionsLabel:SetTextColor(1, 0.8, 0)
     
     -- ERSTE REIHE: Penalty-Buttons
@@ -195,7 +195,7 @@ function UI:CreateBottomPanel()
         button:SetPoint("TOPLEFT", xOffset, yOffset)
         button:SetText(reason .. " (" .. Logic:FormatGold(amount) .. ")")
         
-        -- Click-Handler für aktuell ausgewählten Spieler
+        -- Click handler for currently selected player
         button:SetScript("OnClick", function()
             UI:ApplyPenaltyToSelectedPlayer(reason, amount)
         end)
@@ -203,9 +203,9 @@ function UI:CreateBottomPanel()
         -- Tooltip
         button:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
-            GameTooltip:SetText("Strafe anwenden: " .. reason)
-            GameTooltip:AddLine("Betrag: " .. Logic:FormatGold(amount))
-            GameTooltip:AddLine("Klicke um diese Strafe dem ausgewählten Spieler zu geben.", 1, 1, 1)
+            GameTooltip:SetText("Apply penalty: " .. reason)
+            GameTooltip:AddLine("Amount: " .. Logic:FormatGold(amount))
+            GameTooltip:AddLine("Click to give this penalty to the selected player.", 1, 1, 1)
             GameTooltip:Show()
         end)
         button:SetScript("OnLeave", function()
@@ -213,27 +213,27 @@ function UI:CreateBottomPanel()
         end)
         
         xOffset = xOffset + 150
-        if xOffset > FRAME_WIDTH - 160 then -- Nächste Zeile
+        if xOffset > FRAME_WIDTH - 160 then -- Next line
             xOffset = 10
             yOffset = yOffset - 30
         end
     end
     
-    -- "Verwaltung:" Label für zweite Reihe
+    -- "Management:" label for second row
     local managementLabel = bottomPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     managementLabel:SetPoint("TOPLEFT", 10, -60)
-    managementLabel:SetText("Verwaltung:")
+    managementLabel:SetText("Management:")
     managementLabel:SetTextColor(1, 0.8, 0)
     
-    -- ZWEITE REIHE: Management-Buttons
+    -- SECOND ROW: Management Buttons
     local managementYOffset = -80
     
-    -- "Bezahlt" Button
+    -- "Paid" Button
     local paidButton = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
     paidButton:SetSize(120, BUTTON_HEIGHT)
     paidButton:SetPoint("TOPLEFT", 10, managementYOffset)
-    paidButton:SetText("Bezahlt")
-    paidButton:GetFontString():SetTextColor(0.2, 1, 0.2) -- Grün
+    paidButton:SetText("Paid")
+    paidButton:GetFontString():SetTextColor(0.2, 1, 0.2) -- Green
     
     paidButton:SetScript("OnClick", function()
         UI:ResetSelectedPlayerPenalties()
@@ -241,9 +241,9 @@ function UI:CreateBottomPanel()
     
     paidButton:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText("Spieler als bezahlt markieren")
-        GameTooltip:AddLine("Setzt alle Strafen des ausgewählten Spielers zurück.", 1, 1, 1)
-        GameTooltip:AddLine("Verwende dies, wenn der Spieler seine Schulden beglichen hat.", 0.8, 0.8, 0.8)
+        GameTooltip:SetText("Mark player as paid")
+        GameTooltip:AddLine("Resets all penalties for the selected player.", 1, 1, 1)
+        GameTooltip:AddLine("Use this when the player has settled their debts.", 0.8, 0.8, 0.8)
         GameTooltip:Show()
     end)
     paidButton:SetScript("OnLeave", function()
@@ -263,9 +263,9 @@ function UI:CreateBottomPanel()
     
     whisperButton:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText("Strafe per Whisper senden")
-        GameTooltip:AddLine("Sendet dem ausgewählten Spieler seine aktuelle Strafe per Whisper.", 1, 1, 1)
-        GameTooltip:AddLine("Zeigt alle Strafen und die Gesamtsumme an.", 0.8, 0.8, 0.8)
+        GameTooltip:SetText("Send penalty via whisper")
+        GameTooltip:AddLine("Sends the selected player their current penalty via whisper.", 1, 1, 1)
+        GameTooltip:AddLine("Shows all penalties and the total amount.", 0.8, 0.8, 0.8)
         GameTooltip:Show()
     end)
     whisperButton:SetScript("OnLeave", function()
@@ -283,7 +283,7 @@ function UI:SetupEventHandlers()
         end
     end)
     
-    -- Keyboard-Eingabe aktivieren wenn Frame gezeigt wird
+    -- Enable keyboard input when frame is shown
     mainFrame:SetScript("OnShow", function(self)
         self:EnableKeyboard(true)
     end)
@@ -298,7 +298,7 @@ function UI:RefreshPlayerList()
         return
     end
     
-    -- Alte Rows entfernen
+    -- Remove old rows
     for _, row in ipairs(playerRows) do
         row:Hide()
         row:SetParent(nil)
@@ -320,16 +320,16 @@ function UI:RefreshPlayerList()
         contentHeight = contentHeight + ROW_HEIGHT
     end
     
-    -- Content-Frame Höhe anpassen
+    -- Adjust content frame height
     mainFrame.contentFrame:SetHeight(math.max(contentHeight, mainFrame.scrollFrame:GetHeight()))
 end
 
 function UI:CreatePlayerRow(playerName, playerData, yOffset)
-    local row = CreateFrame("Button", nil, mainFrame.contentFrame) -- Button für Auswahl
+    local row = CreateFrame("Button", nil, mainFrame.contentFrame) -- Button for selection
     row:SetSize(FRAME_WIDTH - 50, ROW_HEIGHT)
     row:SetPoint("TOPLEFT", 0, yOffset)
     
-    -- Hintergrund für bessere Lesbarkeit
+    -- Background for better readability
     local bg = row:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     if math.floor(math.abs(yOffset) / ROW_HEIGHT) % 2 == 0 then
@@ -338,17 +338,17 @@ function UI:CreatePlayerRow(playerName, playerData, yOffset)
         bg:SetColorTexture(0.1, 0.1, 0.1, 0.2)
     end
     
-    -- Auswahlhintergrund
+    -- Selection background
     local selectedBg = row:CreateTexture(nil, "HIGHLIGHT")
     selectedBg:SetAllPoints()
     selectedBg:SetColorTexture(0.3, 0.6, 1, 0.3)
     
-    -- Click-Handler für Spielerauswahl
+    -- Click handler for player selection
     row:SetScript("OnClick", function()
         UI:SelectPlayer(playerName)
     end)
     
-    -- Spielername mit Klassenfarbe
+    -- Player name with class color
     local nameLabel = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     nameLabel:SetPoint("LEFT", 5, 0)
     nameLabel:SetText(playerName)
@@ -369,7 +369,7 @@ function UI:CreatePlayerRow(playerName, playerData, yOffset)
         counter:SetWidth(BUTTON_WIDTH)
         counter:SetJustifyH("CENTER")
         
-        -- Counter-Wert berechnen
+        -- Calculate counter value
         local count = 0
         if playerData.penalties then
             for _, penalty in ipairs(playerData.penalties) do
@@ -381,7 +381,7 @@ function UI:CreatePlayerRow(playerName, playerData, yOffset)
         
         counter:SetText(tostring(count))
         
-        -- Farbe je nach Anzahl
+        -- Color based on count
         if count > 3 then
             counter:SetTextColor(1, 0.2, 0.2) -- Rot
         elseif count > 1 then
@@ -395,14 +395,14 @@ function UI:CreatePlayerRow(playerName, playerData, yOffset)
         xOffset = xOffset + (BUTTON_WIDTH + 15)
     end
     
-    -- Gesamt-Anzeige
+    -- Total display
     local totalLabel = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     totalLabel:SetPoint("RIGHT", -10, 0)
     totalLabel:SetText(Logic:FormatGold(playerData.total))
     totalLabel:SetWidth(120)
     totalLabel:SetJustifyH("RIGHT")
     
-    -- Farbe je nach Höhe der Strafe
+    -- Color based on penalty amount
     if playerData.total > 50000 then -- > 5g
         totalLabel:SetTextColor(1, 0.2, 0.2) -- Rot
     elseif playerData.total > 20000 then -- > 2g
@@ -411,7 +411,7 @@ function UI:CreatePlayerRow(playerName, playerData, yOffset)
         totalLabel:SetTextColor(0.8, 0.8, 0.8) -- Grau
     end
     
-    -- Row speichern für Auswahl-System
+    -- Save row for selection system
     row.playerName = playerName
     
     return row
@@ -427,21 +427,21 @@ end
 
 function UI:AddPlayerManually(playerName)
     if Logic:AddPlayerManually(playerName) then
-        print("Spieler '" .. playerName .. "' zur aktuellen Session hinzugefügt.")
+        print("Player '" .. playerName .. "' added to current session.")
         self:RefreshPlayerList()
     else
-        print("Fehler: Spieler '" .. playerName .. "' konnte nicht hinzugefügt werden oder existiert bereits.")
+        print("Error: Player '" .. playerName .. "' could not be added or already exists.")
     end
 end
 
 function UI:SelectPlayer(playerName)
     selectedPlayer = playerName
-    print("Spieler ausgewählt: " .. playerName)
+    print("Player selected: " .. playerName)
     
-    -- Visuelle Aktualisierung der Auswahl
+    -- Visual update of selection
     for _, row in ipairs(playerRows) do
         if row.playerName == playerName then
-            -- Ausgewählte Zeile hervorheben
+            -- Highlight selected row
             local bg = row:CreateTexture(nil, "BACKGROUND")
             bg:SetAllPoints()
             bg:SetColorTexture(0.2, 0.5, 1, 0.4)
@@ -451,54 +451,54 @@ end
 
 function UI:ApplyPenaltyToSelectedPlayer(reason, amount)
     if not selectedPlayer then
-        print("Kein Spieler ausgewählt! Klicke zuerst auf einen Spieler in der Liste.")
+        print("No player selected! Click on a player in the list first.")
         return
     end
     
     if Logic:ApplyPenalty(selectedPlayer, reason, amount) then
         self:RefreshPlayerList()
     else
-        print("Fehler beim Anwenden der Strafe.")
+        print("Error applying penalty.")
     end
 end
 
 function UI:ResetSelectedPlayerPenalties()
     if not selectedPlayer then
-        print("Kein Spieler ausgewählt! Klicke zuerst auf einen Spieler in der Liste.")
+        print("No player selected! Click on a player in the list first.")
         return
     end
     
-    -- Bestätigungsdialog anzeigen
+    -- Show confirmation dialog
     StaticPopup_Show("RAIDSANCTIONS_PLAYER_PAID_CONFIRM", selectedPlayer)
 end
 
 function UI:WhisperPlayerBalance()
     if not selectedPlayer then
-        print("Kein Spieler ausgewählt! Klicke zuerst auf einen Spieler in der Liste.")
+        print("No player selected! Click on a player in the list first.")
         return
     end
     
     local session = Logic:GetCurrentSession()
     if not session or not session.players[selectedPlayer] then
-        print("Keine Daten für Spieler " .. selectedPlayer .. " gefunden.")
+        print("No data found for player " .. selectedPlayer .. ".")
         return
     end
     
     local playerData = session.players[selectedPlayer]
     
-    -- Whisper-Nachricht erstellen
+    -- Create whisper message
     if playerData.total > 0 then
         local penaltyDetails = {}
         local penaltyCounts = {}
         
-        -- Strafen zählen
+        -- Count penalties
         if playerData.penalties then
             for _, penalty in ipairs(playerData.penalties) do
                 penaltyCounts[penalty.reason] = (penaltyCounts[penalty.reason] or 0) + 1
             end
         end
         
-        -- Details-String erstellen
+        -- Create details string
         for reason, count in pairs(penaltyCounts) do
             table.insert(penaltyDetails, count .. "x " .. reason)
         end
@@ -506,13 +506,13 @@ function UI:WhisperPlayerBalance()
         local detailsText = table.concat(penaltyDetails, ", ")
         local totalText = Logic:FormatGold(playerData.total)
         
-        -- Whisper senden (vereinfachte Nachricht ohne problematische Zeichen)
-        local message = "RaidSanctions Strafen " .. detailsText .. " Gesamt " .. totalText
+        -- Send whisper (simplified message without problematic characters)
+        local message = "RaidSanctions Penalties " .. detailsText .. " Total " .. totalText
         SendChatMessage(message, "WHISPER", nil, selectedPlayer)
-        print("Strafe-Details an " .. selectedPlayer .. " gewhispert: " .. totalText)
+        print("Penalty details whispered to " .. selectedPlayer .. ": " .. totalText)
     else
-        SendChatMessage("RaidSanctions Du hast keine ausstehenden Strafen", "WHISPER", nil, selectedPlayer)
-        print("Bestätigung an " .. selectedPlayer .. " gesendet: Keine Strafen.")
+        SendChatMessage("RaidSanctions You have no outstanding penalties", "WHISPER", nil, selectedPlayer)
+        print("Confirmation sent to " .. selectedPlayer .. ": No penalties.")
     end
 end
 
@@ -524,9 +524,9 @@ function UI:Toggle()
     if mainFrame:IsShown() then
         mainFrame:Hide()
     else
-        -- Daten aktualisieren vor dem Anzeigen
+        -- Update data before showing
         Logic:UpdateRaidMembers()
-        self:RefreshPlayerList() -- Liste aktualisieren vor dem Anzeigen
+        self:RefreshPlayerList() -- Update list before showing
         mainFrame:Show()
     end
 end
@@ -537,7 +537,7 @@ function UI:Show()
     end
     
     Logic:UpdateRaidMembers()
-    self:RefreshPlayerList() -- Liste aktualisieren vor dem Anzeigen
+    self:RefreshPlayerList() -- Update list before showing
     mainFrame:Show()
 end
 
@@ -556,14 +556,14 @@ function UI:ShowOptionsWindow()
 end
 
 function UI:CreateOptionsWindow()
-    -- Options-Frame erstellen
+    -- Create options frame
     local optionsFrame = CreateFrame("Frame", "RaidSanctionsOptionsFrame", mainFrame, "BackdropTemplate")
     optionsFrame:SetSize(500, 400)
-    optionsFrame:SetPoint("CENTER", mainFrame, "CENTER") -- Zentriert im Hauptfenster
+    optionsFrame:SetPoint("CENTER", mainFrame, "CENTER") -- Centered in main window
     optionsFrame:SetFrameStrata("HIGH")
-    optionsFrame:SetFrameLevel(200) -- Über dem Hauptfenster
+    optionsFrame:SetFrameLevel(200) -- Above main window
     
-    -- Backdrop für Options-Frame
+    -- Backdrop for options frame
     optionsFrame:SetBackdrop({
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -575,36 +575,36 @@ function UI:CreateOptionsWindow()
     optionsFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
     optionsFrame:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
     
-    -- Nur Mouse-Input aktivieren (nicht bewegbar)
+    -- Only enable mouse input (not movable)
     optionsFrame:EnableMouse(true)
     
-    -- Titel für Options-Frame
+    -- Title for options frame
     local optionsTitle = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
     optionsTitle:SetPoint("TOP", 0, -15)
-    optionsTitle:SetText("RaidSanctions - Optionen")
+    optionsTitle:SetText("RaidSanctions - Options")
     optionsTitle:SetTextColor(1, 0.8, 0)
     
-    -- Schließen-Button für Options-Frame
+    -- Close button for options frame
     local optionsCloseButton = CreateFrame("Button", nil, optionsFrame, "UIPanelCloseButton")
     optionsCloseButton:SetPoint("TOPRIGHT", -5, -5)
     optionsCloseButton:SetScript("OnClick", function()
         optionsFrame:Hide()
     end)
     
-    -- Tab-System für Optionen erstellen
+    -- Create tab system for options
     local tabs = {}
     local tabContents = {}
     local activeTab = 1
     
-    -- Tab-Definitionen
+    -- Tab definitions
     local tabData = {
-        {name = "Strafen", key = "penalties"},
+        {name = "Penalties", key = "penalties"},
         {name = "UI", key = "interface"},
-        {name = "Verhalten", key = "behavior"},
+        {name = "Behavior", key = "behavior"},
         {name = "Export", key = "export"}
     }
     
-    -- Tab-Buttons erstellen
+    -- Create tab buttons
     local tabY = -50
     for i, data in ipairs(tabData) do
         local tab = CreateFrame("Button", nil, optionsFrame, "UIPanelButtonTemplate")
@@ -612,7 +612,7 @@ function UI:CreateOptionsWindow()
         tab:SetPoint("TOPLEFT", 10 + (i-1) * 105, tabY)
         tab:SetText(data.name)
         
-        -- Tab-Click Handler
+        -- Tab click handler
         tab:SetScript("OnClick", function()
             UI:SwitchToOptionsTab(i)
         end)
@@ -620,7 +620,7 @@ function UI:CreateOptionsWindow()
         tabs[i] = tab
     end
     
-    -- Content-Bereich für Tab-Inhalte
+    -- Content area for tab contents
     local contentFrame = CreateFrame("Frame", nil, optionsFrame, "BackdropTemplate")
     contentFrame:SetPoint("TOPLEFT", 10, -85)
     contentFrame:SetPoint("BOTTOMRIGHT", -10, 10)
@@ -635,50 +635,50 @@ function UI:CreateOptionsWindow()
     contentFrame:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
     contentFrame:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
     
-    -- Tab-Inhalte erstellen
+    -- Create tab contents
     for i, data in ipairs(tabData) do
         local content = CreateFrame("Frame", nil, contentFrame)
         content:SetAllPoints()
-        content:Hide() -- Alle erstmal verstecken
+        content:Hide() -- Hide all initially
         
-        -- Titel für jeden Tab
+        -- Title for each tab
         local title = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         title:SetPoint("TOP", 0, -15)
-        title:SetText(data.name .. " Einstellungen")
+        title:SetText(data.name .. " Settings")
         title:SetTextColor(1, 0.8, 0)
         
-        -- Placeholder für Tab-Inhalt
+        -- Placeholder for tab content
         local info = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         info:SetPoint("CENTER", 0, 0)
-        info:SetText("Inhalt für " .. data.name .. " wird hier implementiert...")
+        info:SetText("Content for " .. data.name .. " will be implemented here...")
         info:SetTextColor(0.7, 0.7, 0.7)
         
         tabContents[i] = content
     end
     
-    -- Tab-Wechsel Funktion
+    -- Tab switching function
     function UI:SwitchToOptionsTab(tabIndex)
-        -- Alle Tabs zurücksetzen
+        -- Reset all tabs
         for i, tab in ipairs(tabs) do
             tab:GetFontString():SetTextColor(0.8, 0.8, 0.8)
             tabContents[i]:Hide()
         end
         
-        -- Aktiven Tab hervorheben
+        -- Highlight active tab
         tabs[tabIndex]:GetFontString():SetTextColor(1, 1, 1)
         tabContents[tabIndex]:Show()
         activeTab = tabIndex
     end
     
-    -- Ersten Tab standardmäßig aktivieren
+    -- Activate first tab by default
     UI:SwitchToOptionsTab(1)
     
-    -- Referenzen im Frame speichern
+    -- Store references in frame
     optionsFrame.tabs = tabs
     optionsFrame.tabContents = tabContents
     optionsFrame.contentFrame = contentFrame
     
-    -- ESC-Key Handler für Options-Frame
+    -- ESC key handler for options frame
     optionsFrame:SetScript("OnKeyDown", function(self, key)
         if key == "ESCAPE" then
             self:Hide()
@@ -693,18 +693,18 @@ function UI:CreateOptionsWindow()
         self:EnableKeyboard(false)
     end)
     
-    -- Standardmäßig versteckt
+    -- Hidden by default
     optionsFrame:Hide()
     
-    -- Frame speichern
+    -- Store frame
     self.optionsFrame = optionsFrame
 end
 
--- Static Popup für Reset-Bestätigung
+-- Static popup for reset confirmation
 StaticPopupDialogs["RAIDSANCTIONS_RESET_CONFIRM"] = {
-    text = "Alle Sanktionsdaten der aktuellen Session zurücksetzen?",
-    button1 = "Ja",
-    button2 = "Nein",
+    text = "Reset all sanction data for the current session?",
+    button1 = "Yes",
+    button2 = "No",
     OnAccept = function()
         Logic:ResetSessionData()
         UI:RefreshPlayerList()
@@ -715,17 +715,17 @@ StaticPopupDialogs["RAIDSANCTIONS_RESET_CONFIRM"] = {
     preferredIndex = 3,
 }
 
--- Static Popup für Spieler hinzufügen
+-- Static popup for adding player
 StaticPopupDialogs["RAIDSANCTIONS_ADD_PLAYER"] = {
-    text = "Spielername eingeben:",
-    button1 = "Hinzufügen",
-    button2 = "Abbrechen",
+    text = "Enter player name:",
+    button1 = "Add",
+    button2 = "Cancel",
     hasEditBox = true,
     editBoxWidth = 200,
     OnAccept = function(self)
         local playerName = self.editBox:GetText()
         if playerName and playerName:trim() ~= "" then
-            -- Spielername bereinigen (Groß-/Kleinschreibung normalisieren)
+            -- Clean player name (normalize capitalization)
             playerName = playerName:gsub("^%l", string.upper)
             UI:AddPlayerManually(playerName)
         end
@@ -751,16 +751,16 @@ StaticPopupDialogs["RAIDSANCTIONS_ADD_PLAYER"] = {
     preferredIndex = 3,
 }
 
--- Static Popup für Spieler als bezahlt markieren
+-- Static popup for marking player as paid
 StaticPopupDialogs["RAIDSANCTIONS_PLAYER_PAID_CONFIRM"] = {
-    text = "Spieler '%s' als bezahlt markieren?\n\nAlle Strafen werden zurückgesetzt.",
-    button1 = "Bezahlt",
-    button2 = "Abbrechen",
+    text = "Mark player '%s' as paid?\n\nAll penalties will be reset.",
+    button1 = "Paid",
+    button2 = "Cancel",
     OnAccept = function()
         if Logic:ResetPlayerPenalties(selectedPlayer) then
             UI:RefreshPlayerList()
         else
-            print("Fehler beim Zurücksetzen der Spielerstrafen.")
+            print("Error resetting player penalties.")
         end
     end,
     timeout = 0,

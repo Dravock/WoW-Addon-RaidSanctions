@@ -1,13 +1,13 @@
--- Hauptdatei für RaidSanctions Addon
--- Event-Management und Addon-Initialisierung
+-- Main file for RaidSanctions Addon
+-- Event management and addon initialization
 
 local addonName, addonTable = ...
 
--- Event-Frame erstellen
+-- Create event frame
 local eventFrame = CreateFrame("Frame", "RaidSanctionsEventFrame")
 local isInitialized = false
 
--- Event-Handler
+-- Event handler
 local function OnEvent(self, event, ...)
     if event == "ADDON_LOADED" then
         local loadedAddonName = ...
@@ -23,7 +23,7 @@ local function OnEvent(self, event, ...)
 end
 
 function OnAddonLoaded()
-    -- Logic-Modul initialisieren
+    -- Initialize Logic module
     if RaidSanctions.Logic then
         RaidSanctions.Logic:OnAddonLoaded()
         isInitialized = true
@@ -35,7 +35,7 @@ function OnPlayerEnteringWorld()
         return
     end
     
-    -- Logic-Event weiterleiten
+    -- Forward Logic event
     if RaidSanctions.Logic then
         RaidSanctions.Logic:OnPlayerEnteringWorld()
     end
@@ -46,13 +46,13 @@ function OnGroupRosterUpdate()
         return
     end
     
-    -- Logic-Event weiterleiten
+    -- Forward Logic event
     if RaidSanctions.Logic then
         RaidSanctions.Logic:OnGroupRosterUpdate()
     end
 end
 
--- Events registrieren
+-- Register events
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
@@ -65,61 +65,67 @@ SlashCmdList["RAIDSANCTIONS"] = function(msg)
     local command = msg:lower():trim()
     
     if command == "" or command == "show" then
-        -- UI anzeigen/verstecken
+        -- Show/hide UI
         if RaidSanctions.UI then
             RaidSanctions.UI:Toggle()
         end
     elseif command == "reset" then
-        -- Daten zurücksetzen
+        -- Reset data
         if RaidSanctions.Logic then
             RaidSanctions.Logic:ResetSessionData()
         end
+    elseif command == "updatepenalties" then
+        -- Force update penalties to English
+        if RaidSanctions.Logic then
+            RaidSanctions.Logic:UpdatePenaltiesToEnglish()
+        end
     elseif command == "help" then
-        -- Hilfe anzeigen
-        print("RaidSanctions Befehle:")
-        print("/rs oder /rs show - UI öffnen/schließen")
-        print("/rs reset - Aktuelle Session-Daten zurücksetzen")
-        print("/rs debug - Zeige erkannte Spieler")
-        print("/rs help - Diese Hilfe anzeigen")
+        -- Show help
+        print("RaidSanctions Commands:")
+        print("/rs or /rs show - Open/close UI")
+        print("/rs reset - Reset current session data")
+        print("/rs updatepenalties - Update penalty names to English")
+        print("/rs debug - Show detected players")
+        print("/rs help - Show this help")
     elseif command == "debug" then
-        -- Debug-Informationen anzeigen
+        -- Show debug information
         if RaidSanctions.Logic then
             local session = RaidSanctions.Logic:GetCurrentSession()
             if session then
-                print("Aktuelle Session: " .. session.id)
-                print("Erkannte Spieler:")
+                print("Current Session: " .. session.id)
+                print("Detected Players:")
                 for name, data in pairs(session.players) do
                     print("  - " .. name .. " (" .. (data.class or "UNKNOWN") .. ", Level " .. (data.level or "?") .. ")")
                 end
             else
-                print("Keine aktive Session gefunden.")
+                print("No active session found.")
             end
             
             if IsInRaid() then
-                print("Status: Im Raid (" .. GetNumGroupMembers() .. " Mitglieder)")
+                print("Status: In Raid (" .. GetNumGroupMembers() .. " members)")
             elseif IsInGroup() then
-                print("Status: In Gruppe (" .. GetNumGroupMembers() .. " Mitglieder)")
+                print("Status: In Group (" .. GetNumGroupMembers() .. " members)")
             else
                 print("Status: Solo")
             end
         end
     else
-        print("Unbekannter Befehl. Verwende '/rs help' für Hilfe.")
+        print("Unknown command. Use '/rs help' for help.")
     end
 end
 
--- Kompatibilitäts-Funktionen für alte API (falls andere Addons diese verwenden)
+-- Compatibility functions for old API (in case other addons use these)
 function RaidSanctions_OnLoad(self)
-    -- Deprecated - wird für Rückwärtskompatibilität beibehalten
-    print("Warnung: RaidSanctions_OnLoad ist veraltet. Das Addon wurde bereits initialisiert.")
+    -- Deprecated - maintained for backward compatibility
+    print("Warning: RaidSanctions_OnLoad is deprecated. The addon has already been initialized.")
 end
 
 function RaidSanctions_OnEvent(self, event, ...)
-    -- Deprecated - wird für Rückwärtskompatibilität beibehalten
+    -- Deprecated - maintained for backward compatibility
     OnEvent(self, event, ...)
 end
 
--- Global verfügbare Funktionen für andere Addons
+-- Globally available functions for other addons
 function RaidSanctions_ApplyPenalty(playerName, reason, amount)
     if RaidSanctions.Logic then
         return RaidSanctions.Logic:ApplyPenalty(playerName, reason, amount)

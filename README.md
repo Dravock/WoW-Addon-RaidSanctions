@@ -1,202 +1,202 @@
 # RaidSanctions - World of Warcraft Addon
 
-Ein professionelles World of Warcraft Addon zur Verwaltung von Raid-Sanktionen und Geldstrafen für Gilden und Raid-Gruppen.
+A professional World of Warcraft addon for managing raid sanctions and penalties for guilds and raid groups.
 
-## 📋 Übersicht
+## 📋 Overview
 
-RaidSanctions ist ein umfassendes Addon, das Raid-Leitern und Gilden-Offizieren dabei hilft, Strafen für verschiedene Raid-Vergehen zu verwalten. Das Addon bietet eine benutzerfreundliche Oberfläche zur Verfolgung von Penalties, automatische Berechnung von Geldstrafen und persistente Datenspeicherung über Sessions hinweg.
+RaidSanctions is a comprehensive addon that helps raid leaders and guild officers manage penalties for various raid offenses. The addon provides a user-friendly interface for tracking penalties, automatic calculation of fines, and persistent data storage across sessions.
 
 ## ✨ Features
 
-### 🎯 Kernfunktionen
-- **Automatische Spielererkennung**: Erkennt automatisch alle Raid- und Gruppenmitglieder
-- **Vordefinierte Strafen**: Verschiedene Penalty-Kategorien mit konfigurierbaren Beträgen
-- **Echtzeit-Tracking**: Live-Aktualisierung der Penalty-Zähler
-- **Persistente Daten**: Speichert alle Daten zwischen Sessions
-- **Intuitive UI**: Moderne, übersichtliche Benutzeroberfläche
+### 🎯 Core Functions
+- **Automatic Player Detection**: Automatically detects all raid and group members
+- **Predefined Penalties**: Various penalty categories with configurable amounts
+- **Real-time Tracking**: Live updates of penalty counters
+- **Persistent Data**: Saves all data between sessions
+- **Intuitive UI**: Modern, clear user interface
 
-### 💰 Penalty-System
-Das Addon kommt mit vordefinierten Strafen-Kategorien:
+### 💰 Penalty System
+The addon comes with predefined penalty categories:
 
-| Kategorie | Betrag | Beschreibung |
-|-----------|--------|--------------|
-| **Falsche Taktik** | 30s | Für taktische Fehler |
-| **Falsches Gear** | 75s | Für ungeeignete Ausrüstung |
-| **Zu spät** | 1g | Für Verspätungen |
-| **AFK** | 50s | Für unangekündigte Abwesenheit |
-| **Störung** | 25s | Für störendes Verhalten |
+| Category | Amount | Description |
+|----------|--------|-------------|
+| **Wrong Tactic** | 30s | For tactical errors |
+| **Wrong Gear** | 75s | For inappropriate equipment |
+| **Late** | 1g | For being late |
+| **AFK** | 50s | For unannounced absence |
+| **Disruption** | 25s | For disruptive behavior |
 
-### 🖥️ Benutzeroberfläche
-- **Übersichtliche Tabelle**: Zeigt alle Spieler mit ihren Penalty-Zählern
-- **Farbkodierung**: Visuelle Unterscheidung nach Penalty-Anzahl
-- **Klassenfarben**: Spielernamen in ihrer jeweiligen Klassenfarbe
-- **Aktions-Panel**: Schneller Zugriff auf alle Penalty-Kategorien
-- **Auswahlsystem**: Klick-basierte Spielerauswahl für Strafen
+### 🖥️ User Interface
+- **Clear Table**: Shows all players with their penalty counters
+- **Color Coding**: Visual distinction by penalty count
+- **Class Colors**: Player names in their respective class colors
+- **Action Panel**: Quick access to all penalty categories
+- **Selection System**: Click-based player selection for penalties
 
 ## 🚀 Installation
 
-### Automatische Installation (Empfohlen)
-1. Lade das Addon über den CurseForge Client oder WoWUp herunter
-2. Starte World of Warcraft neu
-3. Aktiviere das Addon im Addon-Menü
+### Automatic Installation (Recommended)
+1. Download the addon via CurseForge Client or WoWUp
+2. Restart World of Warcraft
+3. Enable the addon in the addon menu
 
-### Manuelle Installation
-1. Lade die neueste Version von GitHub herunter
-2. Entpacke den Ordner nach:
+### Manual Installation
+1. Download the latest version from GitHub
+2. Extract the folder to:
    ```
    World of Warcraft\_retail_\Interface\AddOns\RaidSanctions\
    ```
-3. Starte World of Warcraft neu
-4. Aktiviere "RaidSanctions" in der Addon-Liste
+3. Restart World of Warcraft
+4. Enable "RaidSanctions" in the addon list
 
-## 🎮 Verwendung
+## 🎮 Usage
 
-### Grundlegende Bedienung
+### Basic Operation
 
-#### Addon öffnen
+#### Open Addon
 ```
 /rs
 /sanktions
 ```
 
-#### Debug-Modus (für Entwickler)
+#### Debug Mode (for developers)
 ```
 /rs debug
 ```
 
-### Schritt-für-Schritt Anleitung
+### Step-by-Step Guide
 
-1. **Raid beitreten**: Das Addon erkennt automatisch alle Raid-/Gruppenmitglieder
-2. **Addon öffnen**: Verwende `/rs` um die Hauptoberfläche zu öffnen
-3. **Spieler auswählen**: Klicke auf einen Spieler in der Liste
-4. **Strafe anwenden**: Klicke auf den entsprechenden Penalty-Button unten
-5. **Übersicht behalten**: Verfolge alle Strafen in Echtzeit
+1. **Join Raid**: The addon automatically detects all raid/group members
+2. **Open Addon**: Use `/rs` to open the main interface
+3. **Select Player**: Click on a player in the list
+4. **Apply Penalty**: Click on the corresponding penalty button below
+5. **Keep Track**: Monitor all penalties in real-time
 
-### UI-Elemente
+### UI Elements
 
-#### Hauptfenster
-- **Spielerliste**: Zeigt alle Raid-Mitglieder mit Penalty-Zählern
-- **Counter-System**: Numerische Anzeige für jede Penalty-Kategorie
-- **Gesamtsumme**: Automatische Berechnung aller Strafen pro Spieler
+#### Main Window
+- **Player List**: Shows all raid members with penalty counters
+- **Counter System**: Numerical display for each penalty category
+- **Total Sum**: Automatic calculation of all penalties per player
 
-#### Aktions-Panel
-- **Penalty-Buttons**: Direkte Anwendung von Strafen auf ausgewählte Spieler
-- **Tooltips**: Detaillierte Informationen zu jeder Strafe
-- **Visual Feedback**: Bestätigung bei erfolgreicher Anwendung
+#### Action Panel
+- **Penalty Buttons**: Direct application of penalties to selected players
+- **Tooltips**: Detailed information for each penalty
+- **Visual Feedback**: Confirmation upon successful application
 
-#### Zusätzliche Features
-- **Add Player**: Manuelle Hinzufügung von Spielern
-- **Reset**: Zurücksetzen aller Session-Daten
-- **ESC-Taste**: Schnelles Schließen des Fensters
+#### Additional Features
+- **Add Player**: Manual addition of players
+- **Reset**: Reset all session data
+- **ESC Key**: Quick closing of the window
 
-## 🔧 Konfiguration
+## 🔧 Configuration
 
-### Penalty-Anpassung
-Die Strafen können in der `logic.lua` angepasst werden:
+### Penalty Adjustment
+Penalties can be adjusted in `logic.lua`:
 
 ```lua
 local penalties = {
-    ["Falsche Taktik"] = 30,  -- 30 Silber
-    ["Falsches Gear"] = 75,   -- 75 Silber
-    ["Zu spät"] = 100,        -- 1 Gold
-    ["AFK"] = 50,             -- 50 Silber
-    ["Störung"] = 25,         -- 25 Silber
+    ["Wrong Tactic"] = 30,    -- 30 Silver
+    ["Wrong Gear"] = 75,      -- 75 Silver
+    ["Late"] = 100,           -- 1 Gold
+    ["AFK"] = 50,             -- 50 Silver
+    ["Disruption"] = 25,      -- 25 Silver
 }
 ```
 
-### Datenspeicherung
-Das Addon speichert Daten in:
-- **RaidSanctionsDB**: Globale Addon-Daten
-- **RaidSanctionsCharDB**: Charakterspezifische Daten
+### Data Storage
+The addon saves data in:
+- **RaidSanctionsDB**: Global addon data
+- **RaidSanctionsCharDB**: Character-specific data
 
-## 📊 Technische Details
+## 📊 Technical Details
 
-### Architektur
-- **Modularer Aufbau**: Getrennte Module für Logic, UI und Events
-- **Event-System**: Reagiert auf WoW-Events wie Gruppenwechsel
-- **Persistenz**: Automatisches Speichern bei Änderungen
+### Architecture
+- **Modular Structure**: Separate modules for Logic, UI and Events
+- **Event System**: Responds to WoW events like group changes
+- **Persistence**: Automatic saving on changes
 
-### Dateien
+### Files
 ```
 RaidSanctions/
-├── RaidSanctions.toc     # Addon-Manifest
-├── RaidSanctions.lua     # Hauptkoordinator
-├── logic.lua             # Geschäftslogik
-├── ui.lua               # Benutzeroberfläche
-├── RaidSanctions.xml    # UI-Definitionen
-└── README.md            # Diese Dokumentation
+├── RaidSanctions.toc     # Addon manifest
+├── RaidSanctions.lua     # Main coordinator
+├── logic.lua             # Business logic
+├── ui.lua               # User interface
+├── RaidSanctions.xml    # UI definitions
+└── README.md            # This documentation
 ```
 
-### Kompatibilität
-- **WoW Version**: Retail (aktuelle Version)
-- **Gruppengröße**: Unterstützt Solo, Gruppe (5) und Raid (40)
-- **Lokalisierung**: Vorbereitet für mehrere Sprachen
+### Compatibility
+- **WoW Version**: Retail (current version)
+- **Group Size**: Supports Solo, Group (5) and Raid (40)
+- **Localization**: Prepared for multiple languages
 
-## 🐛 Fehlerbehebung
+## 🐛 Troubleshooting
 
-### Häufige Probleme
+### Common Issues
 
-**Problem**: Spieler werden nicht angezeigt
-- **Lösung**: Verwende `/rs debug` um die Gruppenerkennung zu testen
+**Problem**: Players are not displayed
+- **Solution**: Use `/rs debug` to test group detection
 
-**Problem**: Daten gehen verloren
-- **Lösung**: Überprüfe ob SavedVariables korrekt geladen werden
+**Problem**: Data is lost
+- **Solution**: Check if SavedVariables are loaded correctly
 
-**Problem**: UI wird nicht angezeigt
-- **Lösung**: Stelle sicher, dass das Addon aktiviert ist (`/reload`)
+**Problem**: UI is not displayed
+- **Solution**: Make sure the addon is enabled (`/reload`)
 
-### Debug-Kommandos
+### Debug Commands
 ```
-/rs debug          # Zeigt aktuelle Gruppenmitglieder
-/reload             # Lädt alle Addons neu
+/rs debug          # Shows current group members
+/reload             # Reloads all addons
 ```
 
-## 🤝 Mitwirken
+## 🤝 Contributing
 
-Beiträge sind willkommen! Bitte beachte:
+Contributions are welcome! Please note:
 
-1. Fork das Repository
-2. Erstelle einen Feature-Branch
-3. Committe deine Änderungen
-4. Erstelle einen Pull Request
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Create a Pull Request
 
-### Entwicklung
+### Development
 ```bash
 git clone https://github.com/Dravock/RaidSanctions.git
 cd RaidSanctions
-# Bearbeite die Dateien in deinem WoW AddOns Ordner
+# Edit files in your WoW AddOns folder
 ```
 
 ## 📝 Changelog
 
 ### Version 1.1
-- ✅ Verbesserte UI mit Counter-System
-- ✅ Bottom-Panel für Aktionen
-- ✅ Automatische Listenaktualisierung
-- ✅ Bessere Farbkodierung
-- ✅ Optimierte Penalty-Anwendung
+- ✅ Improved UI with counter system
+- ✅ Bottom panel for actions
+- ✅ Automatic list updates
+- ✅ Better color coding
+- ✅ Optimized penalty application
 
 ### Version 1.0
-- 🎉 Erste Veröffentlichung
-- ⚡ Grundlegende Penalty-Verwaltung
-- 💾 Persistente Datenspeicherung
-- 🎨 Moderne UI
+- 🎉 First release
+- ⚡ Basic penalty management
+- 💾 Persistent data storage
+- 🎨 Modern UI
 
-## 📄 Lizenz
+## 📄 License
 
-Dieses Projekt steht unter der MIT-Lizenz - siehe [LICENSE](LICENSE) für Details.
+This project is under the MIT License - see [LICENSE](LICENSE) for details.
 
-## 👤 Autor
+## 👤 Author
 
 **Dravock**
 - GitHub: [@Dravock](https://github.com/Dravock)
 
-## 🙏 Danksagungen
+## 🙏 Acknowledgments
 
-- World of Warcraft Community für Feedback und Testing
-- Blizzard Entertainment für die umfangreichen Addon-APIs
-- Alle Beta-Tester und Mitwirkenden
+- World of Warcraft Community for feedback and testing
+- Blizzard Entertainment for the comprehensive addon APIs
+- All beta testers and contributors
 
 ---
 
-**⚡ Für optimale Raid-Disziplin und faire Strafen-Verwaltung!**
+**⚡ For optimal raid discipline and fair penalty management!**
