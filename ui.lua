@@ -137,7 +137,7 @@ function UI:CreateHeader()
     
     -- Create penalty headers dynamically (now as counter)
     local xOffset = 150
-    for reason, amount in pairs(Logic:GetPenalties()) do
+    for reason, amount in pairs(RaidSanctions.Logic:GetPenalties()) do
         local header = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         header:SetPoint("LEFT", xOffset, 0)
         header:SetText(reason) -- Nur Penalty-Name, Counter kommen in die Zeilen
@@ -198,11 +198,11 @@ function UI:CreateBottomPanel()
     -- ERSTE REIHE: Penalty-Buttons
     local xOffset = 10
     local yOffset = -30
-    for reason, amount in pairs(Logic:GetPenalties()) do
+    for reason, amount in pairs(RaidSanctions.Logic:GetPenalties()) do
         local button = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
         button:SetSize(160, BUTTON_HEIGHT) -- Increased from 140 to 160
         button:SetPoint("TOPLEFT", xOffset, yOffset)
-        button:SetText(reason .. " (" .. Logic:FormatGold(amount) .. ")")
+        button:SetText(reason .. " (" .. RaidSanctions.Logic:FormatGold(amount) .. ")")
         
         -- Click handler for currently selected player
         button:SetScript("OnClick", function()
@@ -213,7 +213,7 @@ function UI:CreateBottomPanel()
         button:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
             GameTooltip:SetText("Apply penalty: " .. reason)
-            GameTooltip:AddLine("Amount: " .. Logic:FormatGold(amount))
+            GameTooltip:AddLine("Amount: " .. RaidSanctions.Logic:FormatGold(amount))
             GameTooltip:AddLine("Click to give this penalty to the selected player.", 1, 1, 1)
             GameTooltip:Show()
         end)
@@ -391,7 +391,7 @@ function UI:RefreshPlayerList()
     end
     wipe(playerRows)
     
-    local session = Logic:GetCurrentSession()
+    local session = RaidSanctions.Logic:GetCurrentSession()
     if not session then
         return
     end
@@ -677,7 +677,7 @@ function UI:CreatePlayerRow(playerName, playerData, yOffset)
     
     -- Penalty-Counter (statt Buttons)
     local xOffset = 150
-    for reason, amount in pairs(Logic:GetPenalties()) do
+    for reason, amount in pairs(RaidSanctions.Logic:GetPenalties()) do
         local counter = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         counter:SetPoint("LEFT", xOffset, 0)
         counter:SetWidth(BUTTON_WIDTH)
@@ -712,7 +712,7 @@ function UI:CreatePlayerRow(playerName, playerData, yOffset)
     -- Total display
     local totalLabel = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     totalLabel:SetPoint("RIGHT", -10, 0)
-    totalLabel:SetText(Logic:FormatGold(playerData.total))
+    totalLabel:SetText(RaidSanctions.Logic:FormatGold(playerData.total))
     totalLabel:SetWidth(120)
     totalLabel:SetJustifyH("RIGHT")
     
@@ -851,7 +851,7 @@ function UI:ShowAddPlayerDialog()
 end
 
 function UI:AddPlayerManually(playerName)
-    if Logic:AddPlayerManually(playerName) then
+    if RaidSanctions.Logic:AddPlayerManually(playerName) then
         print("Player '" .. playerName .. "' added to current session.")
         self:RefreshPlayerList()
     else
@@ -885,7 +885,7 @@ function UI:ApplyPenaltyToSelectedPlayer(reason, amount)
         return
     end
     
-    if Logic:ApplyPenalty(selectedPlayer, reason, amount) then
+    if RaidSanctions.Logic:ApplyPenalty(selectedPlayer, reason, amount) then
         self:RefreshPlayerList()
     else
         print("Error applying penalty.")
@@ -913,7 +913,7 @@ function UI:WhisperPlayerBalance()
         return
     end
     
-    local session = Logic:GetCurrentSession()
+    local session = RaidSanctions.Logic:GetCurrentSession()
     if not session or not session.players[selectedPlayer] then
         print("No data found for player " .. selectedPlayer .. ".")
         return
@@ -939,7 +939,7 @@ function UI:WhisperPlayerBalance()
         end
         
         local detailsText = table.concat(penaltyDetails, ", ")
-        local totalText = Logic:FormatGold(playerData.total)
+        local totalText = RaidSanctions.Logic:FormatGold(playerData.total)
         
         -- Send whisper (simplified message without problematic characters)
         local message = "RaidSanctions Penalties " .. detailsText .. " Total " .. totalText
@@ -952,7 +952,7 @@ function UI:WhisperPlayerBalance()
 end
 
 function UI:PostStatsToRaidChat()
-    local session = Logic:GetCurrentSession()
+    local session = RaidSanctions.Logic:GetCurrentSession()
     if not session or not session.players then
         print("No penalty data found.")
         return
@@ -986,7 +986,7 @@ function UI:PostStatsToRaidChat()
     
     -- Post each player's stats
     for i, player in ipairs(playersWithPenalties) do
-        local message = i .. ". " .. player.name .. ": " .. Logic:FormatGold(player.total)
+        local message = i .. ". " .. player.name .. ": " .. RaidSanctions.Logic:FormatGold(player.total)
         SendChatMessage(message, "RAID")
     end
     
@@ -1013,9 +1013,9 @@ function UI:SyncSessionData()
         return
     end
     
-    local session = Logic:GetCurrentSession()
-    local penalties = Logic:GetPenalties()
-    local seasonData = Logic:GetSeasonData()
+    local session = RaidSanctions.Logic:GetCurrentSession()
+    local penalties = RaidSanctions.Logic:GetPenalties()
+    local seasonData = RaidSanctions.Logic:GetSeasonData()
     
     print("DEBUG: Session data exists: " .. tostring(session ~= nil))
     if session then
@@ -1362,16 +1362,22 @@ function UI:ApplySyncData(syncData)
     
     -- 1. Apply penalty configuration (if present)
     if syncData.penaltyConfig and next(syncData.penaltyConfig) then
-        if Logic.SetCustomPenalties then
-            Logic:SetCustomPenalties(syncData.penaltyConfig)
+        if RaidSanctions.Logic and RaidSanctions.Logic.SetCustomPenalties then
+            RaidSanctions.Logic:SetCustomPenalties(syncData.penaltyConfig)
             table.insert(itemsUpdated, "Penalty Settings")
             print("✓ Penalty configuration updated from " .. syncData.sender)
+        else
+            print("DEBUG: RaidSanctions.Logic.SetCustomPenalties not available")
         end
     end
     
     -- 2. Apply session data
     if syncData.sessionData and syncData.sessionData.players then
-        local currentSession = Logic:GetCurrentSession()
+        local currentSession = nil
+        if RaidSanctions.Logic and RaidSanctions.Logic.GetCurrentSession then
+            currentSession = RaidSanctions.Logic:GetCurrentSession()
+        end
+        
         if not currentSession then
             currentSession = {players = {}}
         end
@@ -1405,7 +1411,9 @@ function UI:ApplySyncData(syncData)
                 end
                 
                 -- Recalculate total
-                Logic:RecalculatePlayerTotal(playerName)
+                if RaidSanctions.Logic and RaidSanctions.Logic.RecalculatePlayerTotal then
+                    RaidSanctions.Logic:RecalculatePlayerTotal(playerName)
+                end
                 updatedPlayers = updatedPlayers + 1
             else
                 -- New player, add completely
@@ -1415,7 +1423,11 @@ function UI:ApplySyncData(syncData)
         end
         
         -- Update the session
-        Logic:SetCurrentSession(currentSession)
+        if RaidSanctions.Logic and RaidSanctions.Logic.SetCurrentSession then
+            RaidSanctions.Logic:SetCurrentSession(currentSession)
+        else
+            print("ERROR: RaidSanctions.Logic.SetCurrentSession not available")
+        end
         
         if mergedPlayers > 0 or updatedPlayers > 0 then
             table.insert(itemsUpdated, "Session Data (" .. mergedPlayers .. " new, " .. updatedPlayers .. " updated)")
@@ -1424,15 +1436,18 @@ function UI:ApplySyncData(syncData)
     
     -- 3. Apply season data (if present)
     if syncData.seasonData and syncData.seasonData.players and next(syncData.seasonData.players) then
-        if Logic.MergeSeasonData then
-            local seasonMerged = Logic:MergeSeasonData(syncData.seasonData)
+        if RaidSanctions.Logic and RaidSanctions.Logic.MergeSeasonData then
+            local seasonMerged = RaidSanctions.Logic:MergeSeasonData(syncData.seasonData)
             if seasonMerged then
                 table.insert(itemsUpdated, "Season Statistics")
                 print("✓ Season data merged from " .. syncData.sender)
             end
         else
             -- Fallback: Direct merge if function doesn't exist
-            local currentSeasonData = Logic:GetSeasonData()
+            local currentSeasonData = nil
+            if RaidSanctions.Logic and RaidSanctions.Logic.GetSeasonData then
+                currentSeasonData = RaidSanctions.Logic:GetSeasonData()
+            end
             if not currentSeasonData then
                 currentSeasonData = {players = {}}
             end
@@ -1471,8 +1486,8 @@ function UI:ApplySyncData(syncData)
             end
             
             -- Save updated season data
-            if Logic.SetSeasonData then
-                Logic:SetSeasonData(currentSeasonData)
+            if RaidSanctions.Logic and RaidSanctions.Logic.SetSeasonData then
+                RaidSanctions.Logic:SetSeasonData(currentSeasonData)
                 table.insert(itemsUpdated, "Season Statistics")
             end
         end
