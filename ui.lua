@@ -1130,9 +1130,9 @@ function UI:SendMessagesWithDelay(messageQueue, channel, sessionTimestamp)
             print("ERROR: Failed to send message " .. index .. " (" .. msgData.type .. ")")
         end
         
-        -- Schedule next message with 200ms delay (increased from 100ms)
+        -- Schedule next message with 300ms delay (increased from 200ms for better reliability)
         if index < totalMessages then
-            C_Timer.After(0.2, function()
+            C_Timer.After(0.3, function()
                 sendNextMessage(index + 1)
             end)
         else
@@ -1142,7 +1142,7 @@ function UI:SendMessagesWithDelay(messageQueue, channel, sessionTimestamp)
     end
     
     -- Start sending
-    print("DEBUG: Starting delayed message sending with 200ms intervals")
+    print("DEBUG: Starting delayed message sending with 300ms intervals")
     sendNextMessage(1)
 end
 
@@ -1738,7 +1738,7 @@ function UI:HandleMultiSyncMessage(message, sender, distribution)
                 print("DEBUG: Auto-completing incomplete session " .. key .. " after timeout")
                 print("DEBUG: Completion rate: " .. session.receivedPlayers .. "/" .. session.expectedPlayers .. " (" .. string.format("%.1f", completionRate) .. "%)")
                 
-                if completionRate >= 50 then -- At least 50% received
+                if completionRate >= 40 then -- At least 40% received (was 25%, now higher for better data quality)
                     session.complete = true
                     
                     -- Convert to standard sync data format
@@ -1824,13 +1824,13 @@ function UI:ApplySyncData(syncData)
         local updatedPlayers = 0
         
         for playerName, syncPlayerData in pairs(syncData.sessionData.players) do
-            print("DEBUG: Processing synced player: " .. playerName .. " with total: " .. tostring(syncPlayerData.total))
+            print("DEBUG: Processing synced player: " .. playerName .. " with total: " .. tostring(syncPlayerData.total) .. ", class: " .. tostring(syncPlayerData.class))
             
             -- REPLACE player data completely (don't merge/add)
             currentSession.players[playerName] = {
                 total = syncPlayerData.total or 0,
                 penalties = {},
-                class = (currentSession.players[playerName] and currentSession.players[playerName].class) or nil
+                class = syncPlayerData.class or (currentSession.players[playerName] and currentSession.players[playerName].class) or "UNKNOWN"
             }
             
             -- Copy penalties from sync data (complete replacement)
@@ -1843,9 +1843,9 @@ function UI:ApplySyncData(syncData)
                         uniqueId = penalty.uniqueId
                     })
                 end
-                print("DEBUG: Replaced " .. playerName .. " with " .. #syncPlayerData.penalties .. " penalties, total: " .. tostring(syncPlayerData.total))
+                print("DEBUG: Replaced " .. playerName .. " with " .. #syncPlayerData.penalties .. " penalties, total: " .. tostring(syncPlayerData.total) .. ", class: " .. tostring(syncPlayerData.class))
             else
-                print("DEBUG: Replaced " .. playerName .. " with no penalties, total: " .. tostring(syncPlayerData.total))
+                print("DEBUG: Replaced " .. playerName .. " with no penalties, total: " .. tostring(syncPlayerData.total) .. ", class: " .. tostring(syncPlayerData.class))
             end
             
             mergedPlayers = mergedPlayers + 1
@@ -1854,6 +1854,7 @@ function UI:ApplySyncData(syncData)
         -- Update the session
         if RaidSanctions.Logic and RaidSanctions.Logic.SetCurrentSession then
             RaidSanctions.Logic:SetCurrentSession(currentSession)
+            print("DEBUG: Current session updated with " .. mergedPlayers .. " players")
         else
             print("ERROR: RaidSanctions.Logic.SetCurrentSession not available")
         end
@@ -1861,6 +1862,17 @@ function UI:ApplySyncData(syncData)
         if mergedPlayers > 0 then
             table.insert(itemsUpdated, "Session Data (" .. mergedPlayers .. " players synced)")
             print("DEBUG: Successfully synced " .. mergedPlayers .. " players")
+            
+            -- Debug: List all players now in current session
+            local sessionAfterUpdate = RaidSanctions.Logic:GetCurrentSession()
+            if sessionAfterUpdate and sessionAfterUpdate.players then
+                local totalInSession = 0
+                for name, data in pairs(sessionAfterUpdate.players) do
+                    totalInSession = totalInSession + 1
+                    print("DEBUG: Player in session after sync: " .. name .. " (total: " .. tostring(data.total) .. ", class: " .. tostring(data.class) .. ")")
+                end
+                print("DEBUG: Total players in session after sync: " .. totalInSession)
+            end
         end
     end
     
@@ -1925,6 +1937,19 @@ function UI:ApplySyncData(syncData)
     
     -- Refresh all UI elements
     print("DEBUG: Starting UI refresh after sync...")
+    
+    -- Debug: Check current session before refresh
+    local sessionBeforeRefresh = RaidSanctions.Logic:GetCurrentSession()
+    if sessionBeforeRefresh and sessionBeforeRefresh.players then
+        local countBeforeRefresh = 0
+        for name, data in pairs(sessionBeforeRefresh.players) do
+            countBeforeRefresh = countBeforeRefresh + 1
+        end
+        print("DEBUG: Session has " .. countBeforeRefresh .. " players before RefreshPlayerList")
+    else
+        print("DEBUG: No session or no players before RefreshPlayerList")
+    end
+    
     self:RefreshPlayerList()
     print("DEBUG: RefreshPlayerList() completed")
     
@@ -2931,6 +2956,14 @@ StaticPopupDialogs["RAIDSANCTIONS_SYNC_CONFIRM"] = {
         local syncData = self.data
         if syncData then
             print("DEBUG: Calling ApplySyncData with self.data")
+            print("DEBUG: syncData.sessionData exists: " .. tostring(syncData.sessionData ~= nil))
+            if syncData.sessionData and syncData.sessionData.players then
+                local playerCount = 0
+                for name, playerData in pairs(syncData.sessionData.players) do
+                    playerCount = playerCount + 1
+                end
+                print("DEBUG: syncData contains " .. playerCount .. " players")
+            end
             UI:ApplySyncData(syncData)
         else
             print("ERROR: No sync data available in StaticPopup")
