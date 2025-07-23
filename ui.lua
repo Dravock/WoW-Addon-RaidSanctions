@@ -746,11 +746,11 @@ function UI:CreatePenaltiesTabContent(content)
         local goldLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         goldLabel:SetPoint("LEFT", editBox, "RIGHT", 10, 0)
         goldLabel:SetTextColor(0.8, 0.8, 0.8)
-        goldLabel:SetText("g")
+        goldLabel:SetText("Gold")
         
         -- Update gold display when value changes (no longer needed for conversion)
         editBox:SetScript("OnTextChanged", function(self)
-            -- Gold label stays static as "g"
+            -- Gold label stays static as "Gold"
         end)
         
         -- Store reference
@@ -777,7 +777,7 @@ function UI:CreatePenaltiesTabContent(content)
     local resetButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
     resetButton:SetSize(120, 30)
     resetButton:SetPoint("LEFT", saveButton, "RIGHT", 10, 0)
-    resetButton:SetText("Reset to 1g")
+    resetButton:SetText("Reset to 1 Gold")
     resetButton:GetFontString():SetTextColor(1, 0.8, 0.2)
     
     resetButton:SetScript("OnClick", function()
@@ -789,7 +789,7 @@ function UI:CreatePenaltiesTabContent(content)
     helpText:SetPoint("TOPLEFT", 20, buttonY - 40)
     helpText:SetWidth(400)
     helpText:SetJustifyH("LEFT")
-    helpText:SetText("Note: Changes take effect immediately and will update the UI.\nEnter values in whole gold amounts (e.g., 5 for 5 gold).")
+    helpText:SetText("Note: Changes take effect immediately and will update the UI.\nEnter values in whole gold amounts (e.g., 5 for 5 Gold).")
     helpText:SetTextColor(0.7, 0.7, 0.7)
     
     -- Store references
@@ -843,7 +843,7 @@ function UI:ResetPenaltiesToDefault(editBoxes)
     for reason, editBox in pairs(editBoxes) do
         editBox:SetText("1")
     end
-    print("All penalties reset to 1g. Click 'Save' to apply changes.")
+    print("All penalties reset to 1 Gold. Click 'Save' to apply changes.")
 end
 
 -- Static popup for reset confirmation

@@ -284,11 +284,26 @@ end
 function Logic:FormatGold(amount)
     local gold = math.floor(amount / 10000)
     
-    -- Always display as gold only
-    if gold > 0 then
-        return gold .. "g"
+    -- Format large amounts with k suffix
+    if gold >= 1000000 then
+        -- Millions: 1500000g -> 1500k Gold
+        local millions = math.floor(gold / 1000)
+        return millions .. "k Gold"
+    elseif gold >= 1000 then
+        -- Thousands: 1500g -> 1.5k Gold or 1000g -> 1k Gold
+        local thousands = gold / 1000
+        if thousands == math.floor(thousands) then
+            -- Whole thousands
+            return math.floor(thousands) .. "k Gold"
+        else
+            -- Decimal thousands (1 decimal place)
+            return string.format("%.1fk Gold", thousands)
+        end
+    elseif gold > 0 then
+        -- Regular gold amounts
+        return gold .. " Gold"
     else
-        return "0g"
+        return "0 Gold"
     end
 end
 
