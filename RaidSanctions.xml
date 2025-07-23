@@ -1,0 +1,27 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.blizzard.com/wow/ui/ ..\FrameXML\UI.xsd">
+
+    <Frame name="RaidSanctionsFrame" parent="UIParent" movable="true" enableMouse="true"
+        inherits="BackdropTemplate" hidden="false">
+        <Size>
+            <AbsDimension x="600" y="600" />
+        </Size>
+        <Anchors>
+            <Anchor point="CENTER" />
+        </Anchors>
+        <Layers>
+            <Layer level="OVERLAY">
+                <FontString name="RaidSanctionsTitle" inherits="GameFontHighlightLarge"
+                    text="Raid Sanctions">
+                    <Anchors>
+                        <Anchor point="TOP" relativePoint="TOP" x="0" y="-10" />
+                    </Anchors>
+                </FontString>
+            </Layer>
+        </Layers>
+        <Scripts>
+            <!-- OnLoad entfernt da wir jetzt modulares System verwenden -->
+        </Scripts>
+    </Frame>
+</Ui>

@@ -1,0 +1,11 @@
+## Interface: 110107
+## Title: Raid Sanctions
+## Notes: Verwaltung von Raid-Sanktionen mit persistenter Datenspeicherung
+## Author: Drodar
+## Version: 1.1
+## SavedVariables: RaidSanctionsDB
+## SavedVariablesPerCharacter: RaidSanctionsCharDB
+
+logic.lua
+ui.lua
+RaidSanctions.lua
