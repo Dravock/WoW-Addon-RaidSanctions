@@ -1337,11 +1337,21 @@ function UI:HandleSyncMessage(message, sender, distribution)
     end
     
     print("DEBUG: Sync data parsed successfully, showing confirmation dialog")
-    -- Show confirmation dialog
-    StaticPopup_Show("RAIDSANCTIONS_SYNC_CONFIRM", sender, syncData)
+    -- Show confirmation dialog with proper data passing
+    local popup = StaticPopup_Show("RAIDSANCTIONS_SYNC_CONFIRM", sender)
+    if popup then
+        popup.data = syncData -- Store syncData in the popup for OnAccept
+        print("DEBUG: Sync data stored in popup.data")
+    else
+        print("ERROR: Failed to show StaticPopup")
+    end
 end
 
 function UI:ApplySyncData(syncData)
+    print("DEBUG: ApplySyncData() called")
+    print("DEBUG: syncData type: " .. type(syncData))
+    print("DEBUG: syncData content: " .. tostring(syncData))
+    
     -- Apply the comprehensive synchronized data
     if not syncData then
         print("Error: Invalid sync data.")
@@ -1469,9 +1479,16 @@ function UI:ApplySyncData(syncData)
     end
     
     -- Refresh all UI elements
+    print("DEBUG: Starting UI refresh after sync...")
     self:RefreshPlayerList()
+    print("DEBUG: RefreshPlayerList() completed")
+    
     if self.seasonStatsFrame and self.seasonStatsFrame:IsShown() then
+        print("DEBUG: Refreshing season frame...")
         self:RefreshSeasonPlayerList()
+        print("DEBUG: RefreshSeasonPlayerList() completed")
+    else
+        print("DEBUG: Season frame not shown or doesn't exist")
     end
     
     -- Refresh penalty buttons if penalty config was updated
@@ -2461,7 +2478,18 @@ StaticPopupDialogs["RAIDSANCTIONS_SYNC_CONFIRM"] = {
     button1 = "Accept",
     button2 = "Decline",
     OnAccept = function(self, data)
-        UI:ApplySyncData(data)
+        print("DEBUG: StaticPopup OnAccept called")
+        print("DEBUG: self.data exists: " .. tostring(self.data ~= nil))
+        print("DEBUG: data param exists: " .. tostring(data ~= nil))
+        
+        -- In WoW StaticPopups, the extra data is stored in self.data
+        local syncData = self.data
+        if syncData then
+            print("DEBUG: Calling ApplySyncData with self.data")
+            UI:ApplySyncData(syncData)
+        else
+            print("ERROR: No sync data available in StaticPopup")
+        end
     end,
     timeout = 30,
     whileDead = true,
