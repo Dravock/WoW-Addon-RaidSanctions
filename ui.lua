@@ -272,6 +272,28 @@ function UI:CreateBottomPanel()
         GameTooltip:Hide()
     end)
     
+    -- "Post Stats in Raid Chat" Button
+    local postStatsButton = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
+    postStatsButton:SetSize(160, BUTTON_HEIGHT)
+    postStatsButton:SetPoint("TOPLEFT", 290, managementYOffset)
+    postStatsButton:SetText("Post Stats in Raid Chat")
+    postStatsButton:GetFontString():SetTextColor(1, 0.8, 0.2) -- Gold
+    
+    postStatsButton:SetScript("OnClick", function()
+        UI:PostStatsToRaidChat()
+    end)
+    
+    postStatsButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Post penalty statistics to raid chat")
+        GameTooltip:AddLine("Posts a sorted list of all players with their penalty amounts.", 1, 1, 1)
+        GameTooltip:AddLine("Only shows players with penalties > 0.", 0.8, 0.8, 0.8)
+        GameTooltip:Show()
+    end)
+    postStatsButton:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    
     mainFrame.bottomPanel = bottomPanel
 end
 
@@ -514,6 +536,48 @@ function UI:WhisperPlayerBalance()
         SendChatMessage("RaidSanctions You have no outstanding penalties", "WHISPER", nil, selectedPlayer)
         print("Confirmation sent to " .. selectedPlayer .. ": No penalties.")
     end
+end
+
+function UI:PostStatsToRaidChat()
+    local session = Logic:GetCurrentSession()
+    if not session or not session.players then
+        print("No penalty data found.")
+        return
+    end
+    
+    -- Collect all players with penalties
+    local playersWithPenalties = {}
+    for playerName, playerData in pairs(session.players) do
+        if playerData.total and playerData.total > 0 then
+            table.insert(playersWithPenalties, {
+                name = playerName,
+                total = playerData.total
+            })
+        end
+    end
+    
+    -- Check if any players have penalties
+    if #playersWithPenalties == 0 then
+        SendChatMessage("RaidSanctions: No outstanding penalties!", "RAID")
+        print("Posted to raid: No outstanding penalties.")
+        return
+    end
+    
+    -- Sort players by penalty amount (highest first)
+    table.sort(playersWithPenalties, function(a, b)
+        return a.total > b.total
+    end)
+    
+    -- Post header message
+    SendChatMessage("RaidSanctions - Current Penalty Stats:", "RAID")
+    
+    -- Post each player's stats
+    for i, player in ipairs(playersWithPenalties) do
+        local message = i .. ". " .. player.name .. ": " .. Logic:FormatGold(player.total)
+        SendChatMessage(message, "RAID")
+    end
+    
+    print("Penalty statistics posted to raid chat (" .. #playersWithPenalties .. " players with penalties).")
 end
 
 function UI:Toggle()
