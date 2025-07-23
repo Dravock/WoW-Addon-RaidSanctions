@@ -1,47 +1,47 @@
--- Core Logic für RaidSanctions Addon
--- Behandelt Geschäftslogik, Events und Datenpersistenz
+-- Core Logic for RaidSanctions Addon
+-- Handles business logic, events and data persistence
 
 local addonName, addonTable = ...
 
--- Namespace erstellen
+-- Create namespace
 RaidSanctions = RaidSanctions or {}
 RaidSanctions.Logic = {}
 
--- Lokale Referenzen für bessere Performance
+-- Local references for better performance
 local Logic = RaidSanctions.Logic
 local format = string.format
 local pairs, ipairs = pairs, ipairs
 local wipe = table.wipe or wipe
 
--- Konstanten
+-- Constants
 local ADDON_VERSION = "1.1"
 local DEBUG_MODE = false
 
--- Standard-Sanktionen (können konfiguriert werden)
+-- Default penalties (can be configured)
 local DEFAULT_PENALTIES = {
-    ["Zu spät"] = 10000,
+    ["Late"] = 10000,
     ["AFK"] = 5000,
-    ["Falsches Gear"] = 7500,
-    ["Falsche Taktik"] = 3000,
-    ["Störung"] = 2500
+    ["Wrong Gear"] = 7500,
+    ["Wrong Tactic"] = 3000,
+    ["Disruption"] = 2500
 }
 
--- Lokalisierung
+-- Localization
 local L = {
-    ["LATE"] = "Zu spät",
+    ["LATE"] = "Late",
     ["AFK"] = "AFK", 
-    ["WRONG_GEAR"] = "Falsches Gear",
-    ["WRONG_TACTIC"] = "Falsche Taktik",
-    ["DISRUPTION"] = "Störung",
-    ["TOTAL"] = "Gesamt",
-    ["ADDON_LOADED"] = "RaidSanctions v%s geladen.",
-    ["PENALTY_APPLIED"] = "%s bestraft mit '%s': +%s | Gesamt: %s",
-    ["DATA_RESET"] = "Alle Sanktionsdaten wurden zurückgesetzt."
+    ["WRONG_GEAR"] = "Wrong Gear",
+    ["WRONG_TACTIC"] = "Wrong Tactic",
+    ["DISRUPTION"] = "Disruption",
+    ["TOTAL"] = "Total",
+    ["ADDON_LOADED"] = "RaidSanctions v%s loaded.",
+    ["PENALTY_APPLIED"] = "%s penalized with '%s': +%s | Total: %s",
+    ["DATA_RESET"] = "All sanction data has been reset."
 }
 
--- Datenbank-Funktionen
+-- Database functions
 function Logic:InitializeDatabase()
-    -- Globale Datenbank
+    -- Global database
     RaidSanctionsDB = RaidSanctionsDB or {
         version = ADDON_VERSION,
         penalties = DEFAULT_PENALTIES,
@@ -52,20 +52,42 @@ function Logic:InitializeDatabase()
         }
     }
     
-    -- Charakter-spezifische Datenbank
+    -- Character-specific database
     RaidSanctionsCharDB = RaidSanctionsCharDB or {
         sessions = {},
         currentSession = nil
     }
     
-    -- Version-Check und Migration falls nötig
+    -- Version check and migration if needed
     if RaidSanctionsDB.version ~= ADDON_VERSION then
         self:MigrateDatabase()
     end
 end
 
 function Logic:MigrateDatabase()
-    -- Hier können Datenmigrations-Logic für zukünftige Versionen hinzugefügt werden
+    -- Data migration logic for future versions can be added here
+    
+    -- Update penalties to English names if they are still in German
+    if RaidSanctionsDB.penalties then
+        -- Check for German penalty names and replace with English
+        local oldPenalties = RaidSanctionsDB.penalties
+        local hasGermanNames = false
+        
+        -- Check if we have German names
+        for name, _ in pairs(oldPenalties) do
+            if name == "Zu spät" or name == "Falsche Taktik" or name == "Falsches Gear" or name == "Störung" then
+                hasGermanNames = true
+                break
+            end
+        end
+        
+        if hasGermanNames then
+            -- Replace with English penalties
+            RaidSanctionsDB.penalties = DEFAULT_PENALTIES
+            print("RaidSanctions: Updated penalty names to English")
+        end
+    end
+    
     RaidSanctionsDB.version = ADDON_VERSION
     if DEBUG_MODE then
         print("Database migrated to version " .. ADDON_VERSION)
@@ -97,7 +119,7 @@ function Logic:GetCurrentSession()
 end
 
 function Logic:UpdateRaidMembers()
-    -- Unterstützung für Raid UND Party/Gruppe
+    -- Support for both Raid AND Party/Group
     if not (IsInRaid() or IsInGroup()) then
         return
     end
@@ -107,25 +129,25 @@ function Logic:UpdateRaidMembers()
         session = self:CreateNewSession()
     end
     
-    -- Aktuelle Gruppen-Mitglieder erfassen (Raid oder Party)
+    -- Get current group members (Raid or Party)
     local numMembers = GetNumGroupMembers()
     for i = 1, numMembers do
         local name, rank, subgroup, level, class
         
         if IsInRaid() then
-            -- Raid-Modus
+            -- Raid mode
             name, rank, subgroup, level, class = GetRaidRosterInfo(i)
         else
-            -- Party-Modus
+            -- Party mode
             if i == 1 then
-                -- Eigener Spieler
+                -- Own player
                 name = UnitName("player")
                 class = select(2, UnitClass("player"))
                 level = UnitLevel("player")
                 rank = 0
                 subgroup = 1
             else
-                -- Party-Mitglieder
+                -- Party members
                 local unitId = "party" .. (i - 1)
                 if UnitExists(unitId) then
                     name = UnitName(unitId)
@@ -160,7 +182,7 @@ function Logic:ApplyPenalty(playerName, reason, amount)
     local player = session.players[playerName]
     local timestamp = time()
     
-    -- Penalty-Eintrag erstellen
+    -- Create penalty entry
     local penaltyEntry = {
         reason = reason,
         amount = amount,
@@ -179,7 +201,7 @@ function Logic:ApplyPenalty(playerName, reason, amount)
     )
     print(message)
     
-    -- Sound abspielen falls aktiviert
+    -- Play sound if enabled
     if RaidSanctionsDB.settings.soundEnabled then
         PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
     end
@@ -213,11 +235,11 @@ function Logic:ResetPlayerPenalties(playerName)
         return false
     end
     
-    -- Spielerdaten zurücksetzen
+    -- Reset player data
     session.players[playerName].penalties = {}
     session.players[playerName].total = 0
     
-    print("Strafen für " .. playerName .. " wurden zurückgesetzt - Spieler als bezahlt markiert.")
+    print("Penalties for " .. playerName .. " have been reset - Player marked as paid.")
     return true
 end
 
@@ -231,14 +253,14 @@ function Logic:AddPlayerManually(playerName)
         session = self:CreateNewSession()
     end
     
-    -- Prüfen ob Spieler bereits existiert
+    -- Check if player already exists
     if session.players[playerName] then
-        return false -- Spieler existiert bereits
+        return false -- Player already exists
     end
     
-    -- Spieler hinzufügen mit Standard-Daten
+    -- Add player with default data
     session.players[playerName] = {
-        class = "UNKNOWN", -- Klasse unbekannt da manuell hinzugefügt
+        class = "UNKNOWN", -- Class unknown as manually added
         level = 0,
         subgroup = 0,
         rank = 0,
@@ -276,7 +298,7 @@ function Logic:FormatGold(amount)
         result = result .. copper .. "c"
     end
     
-    -- Falls alles 0 ist
+    -- If everything is 0
     if result == "" then
         result = "0c"
     end
@@ -286,6 +308,12 @@ end
 
 function Logic:GetPenalties()
     return RaidSanctionsDB.penalties
+end
+
+function Logic:UpdatePenaltiesToEnglish()
+    -- Force update penalties to English names
+    RaidSanctionsDB.penalties = DEFAULT_PENALTIES
+    print("RaidSanctions: Penalty names updated to English. Please reload the UI (/rs show).")
 end
 
 function Logic:SetPenalty(reason, amount)
@@ -302,14 +330,14 @@ function Logic:Debug(message)
     end
 end
 
--- Event-Handler
+-- Event handlers
 function Logic:OnAddonLoaded()
     self:InitializeDatabase()
     print(format(L["ADDON_LOADED"], ADDON_VERSION))
 end
 
 function Logic:OnPlayerEnteringWorld()
-    -- Prüfen ob in Raid oder Gruppe und Session aktualisieren
+    -- Check if in raid or group and update session
     if IsInRaid() or IsInGroup() then
         self:UpdateRaidMembers()
     end
@@ -318,12 +346,12 @@ end
 function Logic:OnGroupRosterUpdate()
     if IsInRaid() or IsInGroup() then
         self:UpdateRaidMembers()
-        -- UI aktualisieren falls sichtbar
+        -- Update UI if visible
         if RaidSanctions.UI and RaidSanctions.UI.RefreshPlayerList then
             RaidSanctions.UI:RefreshPlayerList()
         end
     else
-        -- Nicht mehr in Gruppe - Session als inaktiv markieren
+        -- No longer in group - mark session as inactive
         local session = self:GetCurrentSession()
         if session then
             session.isActive = false
@@ -331,5 +359,5 @@ function Logic:OnGroupRosterUpdate()
     end
 end
 
--- Export für andere Module
+-- Export for other modules
 RaidSanctions.Logic = Logic

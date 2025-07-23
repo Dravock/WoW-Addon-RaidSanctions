@@ -1,6 +1,6 @@
 ## Interface: 110107
 ## Title: Raid Sanctions
-## Notes: Verwaltung von Raid-Sanktionen mit persistenter Datenspeicherung
+## Notes: Management of raid sanctions with persistent data storage
 ## Author: Drodar
 ## Version: 1.1
 ## SavedVariables: RaidSanctionsDB
