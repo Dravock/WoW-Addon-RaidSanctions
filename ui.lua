@@ -1704,9 +1704,9 @@ function UI:HandleMultiSyncMessage(message, sender, distribution)
                                         local fullReason = reasonShort
                                         if reasonShort == "LAT" then fullReason = "Late" 
                                         elseif reasonShort == "AFK" then fullReason = "AFK" 
-                                        elseif reasonShort == "WRO" then fullReason = "Wrong Gear"
+                                        elseif reasonShort == "WROG" then fullReason = "Wrong Gear"
                                         elseif reasonShort == "DIS" then fullReason = "Disruption"
-                                        elseif reasonShort == "WRO" then fullReason = "Wrong Tactic"
+                                        elseif reasonShort == "WROT" then fullReason = "Wrong Tactic"
                                         end
                                         
                                         table.insert(session.players[playerName].penalties, {
