@@ -316,9 +316,9 @@ function UI:CreateBottomPanel()
     
     syncButton:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText("Synchronize session data")
-        GameTooltip:AddLine("Sends your current session data to all raid members.", 1, 1, 1)
-        GameTooltip:AddLine("Other players with RaidSanctions will receive your data.", 0.8, 0.8, 0.8)
+        GameTooltip:SetText("Synchronize Complete Data")
+        GameTooltip:AddLine("Shares your current session data, penalty settings, and season statistics.", 1, 1, 1)
+        GameTooltip:AddLine("Other players with RaidSanctions will receive all your data.", 0.8, 0.8, 0.8)
         GameTooltip:AddLine("Requires raid leader or assistant permissions.", 1, 0.8, 0.2)
         GameTooltip:Show()
     end)
@@ -954,22 +954,27 @@ function UI:SyncSessionData()
     
     -- Check if we're in a raid or group
     if not IsInRaid() and not IsInGroup() then
-        print("You must be in a raid or group to sync session data.")
+        print("You must be in a raid or group to sync data.")
         return
     end
     
     local session = Logic:GetCurrentSession()
+    local penalties = Logic:GetPenalties()
+    local seasonData = Logic:GetSeasonData()
+    
     if not session or not session.players then
         print("No session data to sync.")
         return
     end
     
-    -- Prepare sync data
+    -- Prepare comprehensive sync data
     local syncData = {
-        version = "1.0",
+        version = "2.0", -- Updated version for extended sync
         timestamp = time(),
         sender = UnitName("player"),
-        sessionData = session
+        sessionData = session,
+        penaltyConfig = penalties, -- Include penalty configuration
+        seasonData = seasonData -- Include season statistics
     }
     
     -- Convert to string for transmission
@@ -983,27 +988,51 @@ function UI:SyncSessionData()
     local channel = IsInRaid() and "RAID" or "PARTY"
     C_ChatInfo.SendAddonMessage("RaidSanctions_Sync", dataString, channel)
     
-    print("Session data synchronized to " .. (IsInRaid() and "raid" or "party") .. " members.")
+    print("Complete data synchronized to " .. (IsInRaid() and "raid" or "party") .. " members (Session + Penalties + Season Stats).")
 end
 
 function UI:SerializeSyncData(data)
-    -- Simple serialization for sync data
-    -- In a real implementation, you might want to use a more robust serialization
+    -- Enhanced serialization for comprehensive sync data
     local success, result = pcall(function()
         local serialized = ""
         serialized = serialized .. "VERSION:" .. data.version .. "|"
         serialized = serialized .. "TIMESTAMP:" .. data.timestamp .. "|"
         serialized = serialized .. "SENDER:" .. data.sender .. "|"
-        serialized = serialized .. "PLAYERS:"
         
+        -- Serialize penalty configuration
+        if data.penaltyConfig then
+            serialized = serialized .. "PENALTIES:"
+            for reason, amount in pairs(data.penaltyConfig) do
+                serialized = serialized .. reason .. "=" .. amount .. ";"
+            end
+            serialized = serialized .. "|"
+        end
+        
+        -- Serialize session data
+        serialized = serialized .. "SESSION:"
         for playerName, playerData in pairs(data.sessionData.players) do
             serialized = serialized .. playerName .. "=" .. (playerData.total or 0) .. ";"
             if playerData.penalties then
                 for _, penalty in ipairs(playerData.penalties) do
-                    serialized = serialized .. penalty.reason .. ":" .. penalty.amount .. ","
+                    serialized = serialized .. penalty.reason .. ":" .. penalty.amount .. "," .. (penalty.uniqueId or "") .. ","
                 end
             end
             serialized = serialized .. "#"
+        end
+        serialized = serialized .. "|"
+        
+        -- Serialize season data
+        if data.seasonData and data.seasonData.players then
+            serialized = serialized .. "SEASON:"
+            for playerName, playerData in pairs(data.seasonData.players) do
+                serialized = serialized .. playerName .. "=" .. (playerData.totalAmount or 0) .. ";"
+                if playerData.penalties then
+                    for _, penalty in ipairs(playerData.penalties) do
+                        serialized = serialized .. penalty.reason .. ":" .. penalty.amount .. "," .. (penalty.uniqueId or "") .. ","
+                    end
+                end
+                serialized = serialized .. "#"
+            end
         end
         
         return serialized
@@ -1013,10 +1042,8 @@ function UI:SerializeSyncData(data)
 end
 
 function UI:DeserializeSyncData(dataString)
-    -- Deserialize sync data
+    -- Enhanced deserialization for comprehensive sync data
     local success, result = pcall(function()
-        local data = {players = {}}
-        
         -- Parse basic info
         local version = dataString:match("VERSION:([^|]+)")
         local timestamp = tonumber(dataString:match("TIMESTAMP:([^|]+)"))
@@ -1026,10 +1053,32 @@ function UI:DeserializeSyncData(dataString)
             return nil
         end
         
-        -- Parse players data
-        local playersSection = dataString:match("PLAYERS:(.+)")
-        if playersSection then
-            for playerBlock in playersSection:gmatch("([^#]+)") do
+        local syncData = {
+            version = version,
+            timestamp = timestamp,
+            sender = sender,
+            sessionData = {players = {}},
+            penaltyConfig = {},
+            seasonData = {players = {}}
+        }
+        
+        -- Parse penalty configuration (if present in v2.0+)
+        local penaltiesSection = dataString:match("PENALTIES:([^|]+)")
+        if penaltiesSection then
+            for penaltyBlock in penaltiesSection:gmatch("([^;]+)") do
+                if penaltyBlock ~= "" then
+                    local reason, amount = penaltyBlock:match("([^=]+)=(.+)")
+                    if reason and amount then
+                        syncData.penaltyConfig[reason] = tonumber(amount) or 10000 -- Default 1g
+                    end
+                end
+            end
+        end
+        
+        -- Parse session data
+        local sessionSection = dataString:match("SESSION:([^|]+)")
+        if sessionSection then
+            for playerBlock in sessionSection:gmatch("([^#]+)") do
                 if playerBlock ~= "" then
                     local playerName, playerInfo = playerBlock:match("([^=]+)=(.+)")
                     if playerName and playerInfo then
@@ -1054,7 +1103,7 @@ function UI:DeserializeSyncData(dataString)
                             end
                         end
                         
-                        data.players[playerName] = {
+                        syncData.sessionData.players[playerName] = {
                             total = total,
                             penalties = penalties,
                             class = nil -- Will be updated when player joins
@@ -1064,12 +1113,45 @@ function UI:DeserializeSyncData(dataString)
             end
         end
         
-        return {
-            version = version,
-            timestamp = timestamp,
-            sender = sender,
-            sessionData = data
-        }
+        -- Parse season data (if present)
+        local seasonSection = dataString:match("SEASON:(.+)")
+        if seasonSection then
+            for playerBlock in seasonSection:gmatch("([^#]+)") do
+                if playerBlock ~= "" then
+                    local playerName, playerInfo = playerBlock:match("([^=]+)=(.+)")
+                    if playerName and playerInfo then
+                        local total = tonumber(playerInfo:match("^(%d+)"))
+                        local penalties = {}
+                        
+                        -- Parse season penalties
+                        local penaltiesSection = playerInfo:match(";(.+)")
+                        if penaltiesSection then
+                            for penaltyInfo in penaltiesSection:gmatch("([^,]+)") do
+                                if penaltyInfo ~= "" then
+                                    local reason, amount = penaltyInfo:match("([^:]+):(%d+)")
+                                    if reason and amount then
+                                        table.insert(penalties, {
+                                            reason = reason,
+                                            amount = tonumber(amount),
+                                            timestamp = timestamp,
+                                            uniqueId = timestamp .. "_" .. math.random(1000, 9999)
+                                        })
+                                    end
+                                end
+                            end
+                        end
+                        
+                        syncData.seasonData.players[playerName] = {
+                            name = playerName,
+                            totalAmount = total,
+                            penalties = penalties
+                        }
+                    end
+                end
+            end
+        end
+        
+        return syncData
     end)
     
     return success and result or nil
@@ -1093,63 +1175,161 @@ function UI:HandleSyncMessage(message, sender, distribution)
 end
 
 function UI:ApplySyncData(syncData)
-    -- Apply the synchronized data to current session
-    if not syncData or not syncData.sessionData then
+    -- Apply the comprehensive synchronized data
+    if not syncData then
         print("Error: Invalid sync data.")
         return
     end
     
-    -- Merge with current session data
-    local currentSession = Logic:GetCurrentSession()
-    if not currentSession then
-        currentSession = {players = {}}
+    local itemsUpdated = {}
+    
+    -- 1. Apply penalty configuration (if present)
+    if syncData.penaltyConfig and next(syncData.penaltyConfig) then
+        if Logic.SetCustomPenalties then
+            Logic:SetCustomPenalties(syncData.penaltyConfig)
+            table.insert(itemsUpdated, "Penalty Settings")
+            print("✓ Penalty configuration updated from " .. syncData.sender)
+        end
     end
     
-    local mergedPlayers = 0
-    local updatedPlayers = 0
-    
-    for playerName, syncPlayerData in pairs(syncData.sessionData.players) do
-        if currentSession.players[playerName] then
-            -- Player exists, merge penalties
-            if not currentSession.players[playerName].penalties then
-                currentSession.players[playerName].penalties = {}
-            end
-            
-            -- Add new penalties from sync data
-            if syncPlayerData.penalties then
-                for _, penalty in ipairs(syncPlayerData.penalties) do
-                    -- Check if this penalty already exists (by uniqueId if available)
-                    local exists = false
-                    for _, existingPenalty in ipairs(currentSession.players[playerName].penalties) do
-                        if existingPenalty.uniqueId == penalty.uniqueId then
-                            exists = true
-                            break
+    -- 2. Apply session data
+    if syncData.sessionData and syncData.sessionData.players then
+        local currentSession = Logic:GetCurrentSession()
+        if not currentSession then
+            currentSession = {players = {}}
+        end
+        
+        local mergedPlayers = 0
+        local updatedPlayers = 0
+        
+        for playerName, syncPlayerData in pairs(syncData.sessionData.players) do
+            if currentSession.players[playerName] then
+                -- Player exists, merge penalties
+                if not currentSession.players[playerName].penalties then
+                    currentSession.players[playerName].penalties = {}
+                end
+                
+                -- Add new penalties from sync data
+                if syncPlayerData.penalties then
+                    for _, penalty in ipairs(syncPlayerData.penalties) do
+                        -- Check if this penalty already exists (by uniqueId if available)
+                        local exists = false
+                        for _, existingPenalty in ipairs(currentSession.players[playerName].penalties) do
+                            if existingPenalty.uniqueId == penalty.uniqueId then
+                                exists = true
+                                break
+                            end
+                        end
+                        
+                        if not exists then
+                            table.insert(currentSession.players[playerName].penalties, penalty)
                         end
                     end
-                    
-                    if not exists then
-                        table.insert(currentSession.players[playerName].penalties, penalty)
+                end
+                
+                -- Recalculate total
+                Logic:RecalculatePlayerTotal(playerName)
+                updatedPlayers = updatedPlayers + 1
+            else
+                -- New player, add completely
+                currentSession.players[playerName] = syncPlayerData
+                mergedPlayers = mergedPlayers + 1
+            end
+        end
+        
+        -- Update the session
+        Logic:SetCurrentSession(currentSession)
+        
+        if mergedPlayers > 0 or updatedPlayers > 0 then
+            table.insert(itemsUpdated, "Session Data (" .. mergedPlayers .. " new, " .. updatedPlayers .. " updated)")
+        end
+    end
+    
+    -- 3. Apply season data (if present)
+    if syncData.seasonData and syncData.seasonData.players and next(syncData.seasonData.players) then
+        if Logic.MergeSeasonData then
+            local seasonMerged = Logic:MergeSeasonData(syncData.seasonData)
+            if seasonMerged then
+                table.insert(itemsUpdated, "Season Statistics")
+                print("✓ Season data merged from " .. syncData.sender)
+            end
+        else
+            -- Fallback: Direct merge if function doesn't exist
+            local currentSeasonData = Logic:GetSeasonData()
+            if not currentSeasonData then
+                currentSeasonData = {players = {}}
+            end
+            
+            for playerName, syncSeasonPlayer in pairs(syncData.seasonData.players) do
+                if not currentSeasonData.players[playerName] then
+                    currentSeasonData.players[playerName] = syncSeasonPlayer
+                else
+                    -- Merge penalties without duplicates
+                    if syncSeasonPlayer.penalties then
+                        for _, penalty in ipairs(syncSeasonPlayer.penalties) do
+                            local exists = false
+                            if currentSeasonData.players[playerName].penalties then
+                                for _, existingPenalty in ipairs(currentSeasonData.players[playerName].penalties) do
+                                    if existingPenalty.uniqueId == penalty.uniqueId then
+                                        exists = true
+                                        break
+                                    end
+                                end
+                            else
+                                currentSeasonData.players[playerName].penalties = {}
+                            end
+                            
+                            if not exists then
+                                table.insert(currentSeasonData.players[playerName].penalties, penalty)
+                            end
+                        end
+                        
+                        -- Recalculate total
+                        currentSeasonData.players[playerName].totalAmount = 0
+                        for _, penalty in ipairs(currentSeasonData.players[playerName].penalties) do
+                            currentSeasonData.players[playerName].totalAmount = currentSeasonData.players[playerName].totalAmount + penalty.amount
+                        end
                     end
                 end
             end
             
-            -- Recalculate total
-            Logic:RecalculatePlayerTotal(playerName)
-            updatedPlayers = updatedPlayers + 1
-        else
-            -- New player, add completely
-            currentSession.players[playerName] = syncPlayerData
-            mergedPlayers = mergedPlayers + 1
+            -- Save updated season data
+            if Logic.SetSeasonData then
+                Logic:SetSeasonData(currentSeasonData)
+                table.insert(itemsUpdated, "Season Statistics")
+            end
         end
     end
     
-    -- Update the session
-    Logic:SetCurrentSession(currentSession)
-    
-    -- Refresh UI
+    -- Refresh all UI elements
     self:RefreshPlayerList()
+    if self.seasonStatsFrame and self.seasonStatsFrame:IsShown() then
+        self:RefreshSeasonPlayerList()
+    end
     
-    print("Sync complete! Merged " .. mergedPlayers .. " new players, updated " .. updatedPlayers .. " existing players from " .. syncData.sender .. ".")
+    -- Refresh penalty buttons if penalty config was updated
+    if syncData.penaltyConfig and next(syncData.penaltyConfig) then
+        -- Recreate the bottom panel with new penalty amounts
+        if mainFrame and mainFrame.bottomPanel then
+            mainFrame.bottomPanel:Hide()
+            mainFrame.bottomPanel:SetParent(nil)
+            mainFrame.bottomPanel = nil
+            self:CreateBottomPanel()
+        end
+        
+        -- Refresh options window if open
+        if self.optionsFrame and self.optionsFrame:IsShown() then
+            self:RefreshOptionsAuthorization()
+        end
+    end
+    
+    -- Summary message
+    if #itemsUpdated > 0 then
+        local summary = "Sync complete! Updated: " .. table.concat(itemsUpdated, ", ") .. " from " .. syncData.sender .. "."
+        print(summary)
+    else
+        print("Sync received from " .. syncData.sender .. " but no changes were needed.")
+    end
 end
 
 function UI:Toggle()
@@ -2110,7 +2290,7 @@ StaticPopupDialogs["RAIDSANCTIONS_CLEANUP_RANDOM_CONFIRM"] = {
 }
 
 StaticPopupDialogs["RAIDSANCTIONS_SYNC_CONFIRM"] = {
-    text = "Sync session data from '%s'?\n\nThis will merge their penalty data with yours.\nExisting penalties will be preserved.",
+    text = "Sync complete data from '%s'?\n\nThis will merge their session data, penalty settings, and season statistics with yours.\nExisting data will be preserved and combined.",
     button1 = "Accept",
     button2 = "Decline",
     OnAccept = function(self, data)
