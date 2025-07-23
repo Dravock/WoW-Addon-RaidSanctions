@@ -335,8 +335,8 @@ function UI:SetupEventHandlers()
     
     print("DEBUG: SetupEventHandlers() called")
     
-    -- Register for addon communication
-    local registerResult = C_ChatInfo.RegisterAddonMessagePrefix("RaidSanctions_Sync")
+    -- Register for addon communication (max 16 characters)
+    local registerResult = C_ChatInfo.RegisterAddonMessagePrefix("RaidSanctions")
     print("DEBUG: RegisterAddonMessagePrefix result: " .. tostring(registerResult))
     
     -- Set up addon message handler
@@ -346,8 +346,8 @@ function UI:SetupEventHandlers()
     
     eventFrame:SetScript("OnEvent", function(self, event, prefix, message, distribution, sender)
         print("DEBUG: Event received - Event: " .. tostring(event) .. ", Prefix: " .. tostring(prefix))
-        if event == "CHAT_MSG_ADDON" and prefix == "RaidSanctions_Sync" then
-            print("DEBUG: RaidSanctions_Sync message received, calling HandleSyncMessage")
+        if event == "CHAT_MSG_ADDON" and prefix == "RaidSanctions" then
+            print("DEBUG: RaidSanctions message received, calling HandleSyncMessage")
             UI:HandleSyncMessage(message, sender, distribution)
         else
             print("DEBUG: Ignoring event/prefix: " .. tostring(event) .. "/" .. tostring(prefix))
@@ -1040,7 +1040,7 @@ function UI:SyncSessionData()
     local channel = IsInRaid() and "RAID" or "PARTY"
     print("DEBUG: Sending to channel: " .. channel)
     
-    local success = C_ChatInfo.SendAddonMessage("RaidSanctions_Sync", dataString, channel)
+    local success = C_ChatInfo.SendAddonMessage("RaidSanctions", dataString, channel)
     print("DEBUG: SendAddonMessage result: " .. tostring(success))
     
     print("Complete data synchronized to " .. (IsInRaid() and "raid" or "party") .. " members (Session + Penalties + Season Stats).")
