@@ -1053,17 +1053,35 @@ function UI:SendMultiMessageSync(session, penalties, seasonData)
     for playerName, playerData in pairs(session.players) do
         -- Create ultra-compact player data: name:total:class:penalties
         local playerCompact = playerName .. ":" .. (playerData.total or 0) .. ":" .. (playerData.class or "UNKNOWN")
+        print("DEBUG: Processing player " .. playerName .. " with " .. (playerData.penalties and #playerData.penalties or 0) .. " penalties, total: " .. (playerData.total or 0))
         
         -- Add compressed penalties if present
         if playerData.penalties and #playerData.penalties > 0 then
             playerCompact = playerCompact .. ":"
+            local penaltyDebug = {}
             for _, penalty in ipairs(playerData.penalties) do
-                -- Ultra-compress: first 3 chars of reason + amount
-                local reasonShort = penalty.reason:sub(1,3):upper()
-                playerCompact = playerCompact .. reasonShort .. penalty.amount .. ","
+                -- Smart-compress: use unique identifiers for each penalty type
+                local reasonShort = ""
+                if penalty.reason == "Late" then reasonShort = "LAT"
+                elseif penalty.reason == "AFK" then reasonShort = "AFK"
+                elseif penalty.reason == "Wrong Gear" then reasonShort = "WGR"
+                elseif penalty.reason == "Wrong Tactic" then reasonShort = "WTC"
+                elseif penalty.reason == "Disruption" then reasonShort = "DIS"
+                else
+                    reasonShort = penalty.reason:sub(1,3):upper() -- Fallback
+                end
+                
+                local compressedPenalty = reasonShort .. penalty.amount
+                playerCompact = playerCompact .. compressedPenalty .. ","
+                table.insert(penaltyDebug, penalty.reason .. "=" .. penalty.amount .. " -> " .. compressedPenalty)
             end
             playerCompact = playerCompact:sub(1, -2) -- Remove trailing comma
+            print("DEBUG: Compressed penalties for " .. playerName .. ": " .. table.concat(penaltyDebug, ", "))
+        else
+            print("DEBUG: No penalties for " .. playerName)
         end
+        
+        print("DEBUG: Final compressed data for " .. playerName .. ": " .. playerCompact)
         
         -- Check if adding this player would exceed message size
         local testMessage = "BATCH|V:2.0|S:" .. sender .. "|T:" .. timestamp .. "|IDX:" .. batchIndex .. "|" .. table.concat(currentBatch, ";") .. ";" .. playerCompact
@@ -1693,20 +1711,21 @@ function UI:HandleMultiSyncMessage(message, sender, distribution)
                         
                         -- Parse compressed penalties if present
                         if penaltiesCompressed then
+                            print("DEBUG: Parsing penalties for " .. playerName .. ": " .. penaltiesCompressed)
                             for penaltyCompact in penaltiesCompressed:gmatch("([^,]+)") do
                                 if penaltyCompact ~= "" then
-                                    -- Parse: AFK50000000 -> reason=AFK, amount=50000000
+                                    -- Parse: LAT10000000 -> reason=Late, amount=10000000
                                     local reasonShort = penaltyCompact:match("([A-Z]+)")
                                     local amount = tonumber(penaltyCompact:match("([0-9]+)"))
                                     
                                     if reasonShort and amount then
-                                        -- Expand short reason codes
+                                        -- Expand short reason codes with correct mapping
                                         local fullReason = reasonShort
                                         if reasonShort == "LAT" then fullReason = "Late" 
                                         elseif reasonShort == "AFK" then fullReason = "AFK" 
-                                        elseif reasonShort == "WROG" then fullReason = "Wrong Gear"
+                                        elseif reasonShort == "WGR" then fullReason = "Wrong Gear"
+                                        elseif reasonShort == "WTC" then fullReason = "Wrong Tactic"
                                         elseif reasonShort == "DIS" then fullReason = "Disruption"
-                                        elseif reasonShort == "WROT" then fullReason = "Wrong Tactic"
                                         end
                                         
                                         table.insert(session.players[playerName].penalties, {
@@ -1715,6 +1734,10 @@ function UI:HandleMultiSyncMessage(message, sender, distribution)
                                             timestamp = tonumber(timestamp),
                                             uniqueId = timestamp .. "_" .. math.random(1000, 9999)
                                         })
+                                        
+                                        print("DEBUG: Added penalty: " .. fullReason .. " = " .. amount .. " for " .. playerName)
+                                    else
+                                        print("DEBUG: Failed to parse penalty: " .. penaltyCompact)
                                     end
                                 end
                             end
