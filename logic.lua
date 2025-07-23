@@ -489,17 +489,13 @@ function Logic:GetSeasonPlayersByCategory()
 end
 
 function Logic:IsPlayerInGuild(playerName)
-    print("DEBUG: Logic:IsPlayerInGuild() called for player: " .. tostring(playerName))
-    
     -- Check if player is in the same guild as the current player
     if not IsInGuild() then
-        print("DEBUG: Current player is not in a guild")
         return false -- Player is not in a guild
     end
     
     -- Get number of guild members
     local numGuildMembers = GetNumGuildMembers()
-    print("DEBUG: Guild has " .. tostring(numGuildMembers) .. " members")
     
     -- Search through guild roster
     for i = 1, numGuildMembers do
@@ -507,15 +503,12 @@ function Logic:IsPlayerInGuild(playerName)
         if name then
             -- Remove realm name if present (handle cross-realm players)
             local guildMemberName = name:match("([^-]+)")
-            print("DEBUG: Checking guild member " .. i .. ": " .. tostring(guildMemberName) .. " vs " .. tostring(playerName))
             if guildMemberName == playerName then
-                print("DEBUG: Player " .. playerName .. " is a guild member!")
                 return true
             end
         end
     end
     
-    print("DEBUG: Player " .. playerName .. " is NOT a guild member")
     return false
 end
 
