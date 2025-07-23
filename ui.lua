@@ -1153,14 +1153,21 @@ function UI:SerializeSyncData(data)
 end
 
 function UI:DeserializeSyncData(dataString)
+    print("DEBUG: DeserializeSyncData() called with message length: " .. string.len(dataString))
+    
     -- Enhanced deserialization for comprehensive sync data
     local success, result = pcall(function()
+        print("DEBUG: Starting deserialization...")
+        
         -- Parse basic info
         local version = dataString:match("VERSION:([^|]+)")
         local timestamp = tonumber(dataString:match("TIMESTAMP:([^|]+)"))
         local sender = dataString:match("SENDER:([^|]+)")
         
+        print("DEBUG: Parsed basic info - Version: " .. tostring(version) .. ", Timestamp: " .. tostring(timestamp) .. ", Sender: " .. tostring(sender))
+        
         if not version or not timestamp or not sender then
+            print("DEBUG: Missing basic info, returning nil")
             return nil
         end
         
@@ -1173,22 +1180,29 @@ function UI:DeserializeSyncData(dataString)
             seasonData = {players = {}}
         }
         
+        print("DEBUG: Parsing penalty configuration...")
         -- Parse penalty configuration (if present in v2.0+)
         local penaltiesSection = dataString:match("PENALTIES:([^|]+)")
         if penaltiesSection then
+            print("DEBUG: Found penalties section: " .. penaltiesSection)
             for penaltyBlock in penaltiesSection:gmatch("([^;]+)") do
                 if penaltyBlock ~= "" then
                     local reason, amount = penaltyBlock:match("([^=]+)=(.+)")
                     if reason and amount then
                         syncData.penaltyConfig[reason] = tonumber(amount) or 10000 -- Default 1g
+                        print("DEBUG: Added penalty config: " .. reason .. " = " .. tostring(amount))
                     end
                 end
             end
+        else
+            print("DEBUG: No penalties section found")
         end
         
+        print("DEBUG: Parsing session data...")
         -- Parse session data
         local sessionSection = dataString:match("SESSION:([^|]+)")
         if sessionSection then
+            print("DEBUG: Found session section, length: " .. string.len(sessionSection))
             for playerBlock in sessionSection:gmatch("([^#]+)") do
                 if playerBlock ~= "" then
                     local playerName, playerInfo = playerBlock:match("([^=]+)=(.+)")
@@ -1196,20 +1210,31 @@ function UI:DeserializeSyncData(dataString)
                         local total = tonumber(playerInfo:match("^(%d+)"))
                         local penalties = {}
                         
-                        -- Parse penalties
+                        print("DEBUG: Processing player: " .. playerName .. ", total: " .. tostring(total))
+                        
+                        -- Parse penalties (if any)
                         local penaltiesSection = playerInfo:match(";(.+)")
                         if penaltiesSection then
-                            for penaltyInfo in penaltiesSection:gmatch("([^,]+)") do
-                                if penaltyInfo ~= "" then
-                                    local reason, amount = penaltyInfo:match("([^:]+):(%d+)")
-                                    if reason and amount then
-                                        table.insert(penalties, {
-                                            reason = reason,
-                                            amount = tonumber(amount),
-                                            timestamp = timestamp,
-                                            uniqueId = timestamp .. "_" .. math.random(1000, 9999)
-                                        })
+                            print("DEBUG: Found penalties for " .. playerName .. ": " .. penaltiesSection)
+                            -- Split by commas and process penalty pairs
+                            local penaltyData = ""
+                            for char in penaltiesSection:gmatch(".") do
+                                if char == "," then
+                                    if penaltyData ~= "" then
+                                        local reason, amount = penaltyData:match("([^:]+):(%d+)")
+                                        if reason and amount then
+                                            table.insert(penalties, {
+                                                reason = reason,
+                                                amount = tonumber(amount),
+                                                timestamp = timestamp,
+                                                uniqueId = timestamp .. "_" .. math.random(1000, 9999)
+                                            })
+                                            print("DEBUG: Added penalty: " .. reason .. " = " .. amount)
+                                        end
+                                        penaltyData = ""
                                     end
+                                else
+                                    penaltyData = penaltyData .. char
                                 end
                             end
                         end
@@ -1219,14 +1244,19 @@ function UI:DeserializeSyncData(dataString)
                             penalties = penalties,
                             class = nil -- Will be updated when player joins
                         }
+                        print("DEBUG: Added session player: " .. playerName .. " with " .. #penalties .. " penalties")
                     end
                 end
             end
+        else
+            print("DEBUG: No session section found")
         end
         
+        print("DEBUG: Parsing season data...")
         -- Parse season data (if present)
         local seasonSection = dataString:match("SEASON:(.+)")
         if seasonSection then
+            print("DEBUG: Found season section, length: " .. string.len(seasonSection))
             for playerBlock in seasonSection:gmatch("([^#]+)") do
                 if playerBlock ~= "" then
                     local playerName, playerInfo = playerBlock:match("([^=]+)=(.+)")
@@ -1234,38 +1264,56 @@ function UI:DeserializeSyncData(dataString)
                         local total = tonumber(playerInfo:match("^(%d+)"))
                         local penalties = {}
                         
-                        -- Parse season penalties
+                        print("DEBUG: Processing season player: " .. playerName .. ", total: " .. tostring(total))
+                        
+                        -- Parse season penalties (if any)
                         local penaltiesSection = playerInfo:match(";(.+)")
                         if penaltiesSection then
-                            for penaltyInfo in penaltiesSection:gmatch("([^,]+)") do
-                                if penaltyInfo ~= "" then
-                                    local reason, amount = penaltyInfo:match("([^:]+):(%d+)")
-                                    if reason and amount then
-                                        table.insert(penalties, {
-                                            reason = reason,
-                                            amount = tonumber(amount),
-                                            timestamp = timestamp,
-                                            uniqueId = timestamp .. "_" .. math.random(1000, 9999)
-                                        })
+                            local penaltyData = ""
+                            for char in penaltiesSection:gmatch(".") do
+                                if char == "," then
+                                    if penaltyData ~= "" then
+                                        local reason, amount = penaltyData:match("([^:]+):(%d+)")
+                                        if reason and amount then
+                                            table.insert(penalties, {
+                                                reason = reason,
+                                                amount = tonumber(amount),
+                                                timestamp = timestamp,
+                                                uniqueId = timestamp .. "_" .. math.random(1000, 9999)
+                                            })
+                                        end
+                                        penaltyData = ""
                                     end
+                                else
+                                    penaltyData = penaltyData .. char
                                 end
                             end
                         end
                         
                         syncData.seasonData.players[playerName] = {
-                            name = playerName,
                             totalAmount = total,
-                            penalties = penalties
+                            penalties = penalties,
+                            class = nil
                         }
+                        print("DEBUG: Added season player: " .. playerName .. " with " .. #penalties .. " penalties")
                     end
                 end
             end
+        else
+            print("DEBUG: No season section found")
         end
         
+        print("DEBUG: Deserialization completed successfully")
         return syncData
     end)
     
-    return success and result or nil
+    if success then
+        print("DEBUG: Deserialization successful")
+        return result
+    else
+        print("DEBUG: Deserialization failed with error: " .. tostring(result))
+        return nil
+    end
 end
 
 function UI:HandleSyncMessage(message, sender, distribution)
