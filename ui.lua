@@ -1018,7 +1018,7 @@ function UI:SyncSessionData()
 end
 
 function UI:SendMultiMessageSync(session, penalties, seasonData)
-    print("DEBUG: SendMultiMessageSync() called - preparing delayed message sending")
+    print("DEBUG: SendMultiMessageSync() called - preparing COMPRESSED message sending")
     
     local sender = UnitName("player")
     local timestamp = time()
@@ -1029,7 +1029,7 @@ function UI:SendMultiMessageSync(session, penalties, seasonData)
         totalPlayers = totalPlayers + 1
     end
     
-    print("DEBUG: Will send " .. totalPlayers .. " individual player messages + 3 config messages with delays")
+    print("DEBUG: Will send " .. totalPlayers .. " players in COMPRESSED batches + 3 config messages")
     
     -- Create message queue
     local messageQueue = {}
@@ -1045,39 +1045,60 @@ function UI:SendMultiMessageSync(session, penalties, seasonData)
     local sessionStartMsg = "CFG:SESSION_START|V:2.0|S:" .. sender .. "|T:" .. timestamp .. "|COUNT:" .. totalPlayers
     table.insert(messageQueue, {type = "CFG:SESSION_START", message = sessionStartMsg})
     
-    -- 3. Individual player messages
-    local playerCount = 0
+    -- 3. COMPRESSED player messages (multiple players per message)
+    local currentBatch = {}
+    local maxMessageSize = 190 -- Conservative limit to avoid WoW's 240 char limit
+    local batchIndex = 1
+    
     for playerName, playerData in pairs(session.players) do
-        playerCount = playerCount + 1
+        -- Create ultra-compact player data: name:total:class:penalties
+        local playerCompact = playerName .. ":" .. (playerData.total or 0) .. ":" .. (playerData.class or "UNKNOWN")
         
-        local playerMsg = "PLAYER|V:2.0|S:" .. sender .. "|T:" .. timestamp .. "|"
-        playerMsg = playerMsg .. "N:" .. playerName .. "|"
-        playerMsg = playerMsg .. "TOTAL:" .. (playerData.total or 0) .. "|"
-        
-        -- Add class if available
-        if playerData.class then
-            playerMsg = playerMsg .. "CLASS:" .. playerData.class .. "|"
-        end
-        
-        -- Add penalties
+        -- Add compressed penalties if present
         if playerData.penalties and #playerData.penalties > 0 then
-            playerMsg = playerMsg .. "PENALTIES:"
+            playerCompact = playerCompact .. ":"
             for _, penalty in ipairs(playerData.penalties) do
-                playerMsg = playerMsg .. penalty.reason .. ":" .. penalty.amount .. ","
+                -- Ultra-compress: first 3 chars of reason + amount
+                local reasonShort = penalty.reason:sub(1,3):upper()
+                playerCompact = playerCompact .. reasonShort .. penalty.amount .. ","
             end
-            playerMsg = playerMsg .. "|"
+            playerCompact = playerCompact:sub(1, -2) -- Remove trailing comma
         end
         
-        -- Check individual message length
-        if string.len(playerMsg) > 240 then
-            print("WARNING: Player message for " .. playerName .. " is " .. string.len(playerMsg) .. " chars (limit 240)")
-            -- Try to truncate penalties if too long
-            playerMsg = "PLAYER|V:2.0|S:" .. sender .. "|T:" .. timestamp .. "|N:" .. playerName .. "|TOTAL:" .. (playerData.total or 0) .. "|"
-            print("DEBUG: Truncated message for " .. playerName .. " to " .. string.len(playerMsg) .. " chars")
-        end
+        -- Check if adding this player would exceed message size
+        local testMessage = "BATCH|V:2.0|S:" .. sender .. "|T:" .. timestamp .. "|IDX:" .. batchIndex .. "|" .. table.concat(currentBatch, ";") .. ";" .. playerCompact
         
-        table.insert(messageQueue, {type = "PLAYER", message = playerMsg, playerName = playerName, index = playerCount})
+        if string.len(testMessage) > maxMessageSize and #currentBatch > 0 then
+            -- Send current batch
+            local batchMessage = "BATCH|V:2.0|S:" .. sender .. "|T:" .. timestamp .. "|IDX:" .. batchIndex .. "|" .. table.concat(currentBatch, ";")
+            table.insert(messageQueue, {type = "BATCH", message = batchMessage, batchIndex = batchIndex, playerCount = #currentBatch})
+            print("DEBUG: Created batch " .. batchIndex .. " with " .. #currentBatch .. " players (" .. string.len(batchMessage) .. " chars)")
+            
+            -- Start new batch
+            currentBatch = {playerCompact}
+            batchIndex = batchIndex + 1
+        else
+            -- Add to current batch
+            table.insert(currentBatch, playerCompact)
+        end
     end
+    
+    -- Send final batch if not empty
+    if #currentBatch > 0 then
+        local batchMessage = "BATCH|V:2.0|S:" .. sender .. "|T:" .. timestamp .. "|IDX:" .. batchIndex .. "|" .. table.concat(currentBatch, ";")
+        table.insert(messageQueue, {type = "BATCH", message = batchMessage, batchIndex = batchIndex, playerCount = #currentBatch})
+        print("DEBUG: Created final batch " .. batchIndex .. " with " .. #currentBatch .. " players (" .. string.len(batchMessage) .. " chars)")
+    end
+    
+    -- 4. Session end marker
+    local sessionEndMsg = "CFG:SESSION_END|V:2.0|S:" .. sender .. "|T:" .. timestamp .. "|SENT:" .. totalPlayers .. "|BATCHES:" .. batchIndex
+    table.insert(messageQueue, {type = "CFG:SESSION_END", message = sessionEndMsg})
+    
+    print("DEBUG: Message queue prepared with " .. #messageQueue .. " messages (1 config + 1 start + " .. batchIndex .. " batches + 1 end). Starting delayed sending...")
+    
+    -- Send messages with delays using our delayed sending function
+    self:SendMessagesWithDelay(messageQueue, channel, timestamp)
+end
     
     -- 4. Session end marker
     local sessionEndMsg = "CFG:SESSION_END|V:2.0|S:" .. sender .. "|T:" .. timestamp .. "|SENT:" .. playerCount
@@ -1119,6 +1140,8 @@ function UI:SendMessagesWithDelay(messageQueue, channel, sessionTimestamp)
         
         if msgData.type == "PLAYER" then
             print("DEBUG: [" .. msgData.index .. "/" .. (totalMessages - 3) .. "] Sent player " .. msgData.playerName .. " (" .. string.len(msgData.message) .. " chars) - Result: " .. tostring(success))
+        elseif msgData.type == "BATCH" then
+            print("DEBUG: [Batch " .. msgData.batchIndex .. "] Sent " .. msgData.playerCount .. " players (" .. string.len(msgData.message) .. " chars) - Result: " .. tostring(success))
         else
             print("DEBUG: Sent " .. msgData.type .. " (" .. string.len(msgData.message) .. " chars) - Result: " .. tostring(success))
         end
@@ -1632,8 +1655,91 @@ function UI:HandleMultiSyncMessage(message, sender, distribution)
             print("DEBUG: Expecting " .. (playerCount or 0) .. " players")
         end
         
+    elseif messageType == "BATCH" then
+        print("DEBUG: Received compressed player batch message")
+        if not self.multiSyncSessions[sessionKey] then
+            print("DEBUG: No session found for batch message, creating one")
+            self.multiSyncSessions[sessionKey] = {
+                sender = sender,
+                timestamp = timestamp,
+                version = version,
+                penaltyConfig = {},
+                players = {},
+                expectedPlayers = 0,
+                receivedPlayers = 0,
+                startTime = time(),
+                complete = false
+            }
+        end
+        
+        local session = self.multiSyncSessions[sessionKey]
+        local batchIndex = tonumber(message:match("IDX:(%d+)"))
+        
+        -- Parse compressed player batch: name:total:class:penalties;name:total:class:penalties;...
+        local batchData = message:match("IDX:" .. batchIndex .. "|(.+)")
+        if batchData then
+            local playersInBatch = 0
+            for playerCompact in batchData:gmatch("([^;]+)") do
+                if playerCompact ~= "" then
+                    -- Parse: playerName:total:class:penalties
+                    local parts = {}
+                    for part in playerCompact:gmatch("([^:]+)") do
+                        table.insert(parts, part)
+                    end
+                    
+                    if #parts >= 3 then
+                        local playerName = parts[1]
+                        local total = tonumber(parts[2]) or 0
+                        local class = parts[3]
+                        local penaltiesCompressed = parts[4] -- Optional
+                        
+                        session.receivedPlayers = session.receivedPlayers + 1
+                        playersInBatch = playersInBatch + 1
+                        session.players[playerName] = {
+                            total = total,
+                            class = class,
+                            penalties = {}
+                        }
+                        
+                        -- Parse compressed penalties if present
+                        if penaltiesCompressed then
+                            for penaltyCompact in penaltiesCompressed:gmatch("([^,]+)") do
+                                if penaltyCompact ~= "" then
+                                    -- Parse: AFK50000000 -> reason=AFK, amount=50000000
+                                    local reasonShort = penaltyCompact:match("([A-Z]+)")
+                                    local amount = tonumber(penaltyCompact:match("([0-9]+)"))
+                                    
+                                    if reasonShort and amount then
+                                        -- Expand short reason codes
+                                        local fullReason = reasonShort
+                                        if reasonShort == "LAT" then fullReason = "Late" 
+                                        elseif reasonShort == "AFK" then fullReason = "AFK" 
+                                        elseif reasonShort == "WRO" then fullReason = "Wrong Gear"
+                                        elseif reasonShort == "DIS" then fullReason = "Disruption"
+                                        elseif reasonShort == "WRO" then fullReason = "Wrong Tactic"
+                                        end
+                                        
+                                        table.insert(session.players[playerName].penalties, {
+                                            reason = fullReason,
+                                            amount = amount,
+                                            timestamp = tonumber(timestamp),
+                                            uniqueId = timestamp .. "_" .. math.random(1000, 9999)
+                                        })
+                                    end
+                                end
+                            end
+                        end
+                        
+                        print("DEBUG: Added player " .. playerName .. " from batch " .. batchIndex .. " with total: " .. total .. ", class: " .. class)
+                    end
+                end
+            end
+            
+            print("DEBUG: Processed batch " .. batchIndex .. " with " .. playersInBatch .. " players (" .. session.receivedPlayers .. "/" .. session.expectedPlayers .. " total)")
+        end
+        
     elseif messageType == "PLAYER" then
-        print("DEBUG: Received individual player message")
+        print("DEBUG: Received individual player message (legacy format)")
         if not self.multiSyncSessions[sessionKey] then
             print("DEBUG: No session found for player message, creating one")
             self.multiSyncSessions[sessionKey] = {
@@ -1688,12 +1794,13 @@ function UI:HandleMultiSyncMessage(message, sender, distribution)
     elseif messageType == "CFG:SESSION_END" then
         print("DEBUG: Received session end message")
         local sentCount = tonumber(message:match("SENT:(%d+)"))
+        local batchCount = tonumber(message:match("BATCHES:(%d+)"))
         
         if self.multiSyncSessions[sessionKey] then
             local session = self.multiSyncSessions[sessionKey]
             session.complete = true
             
-            print("DEBUG: Session complete! Received " .. session.receivedPlayers .. " players, sender reported " .. (sentCount or 0))
+            print("DEBUG: Session complete! Received " .. session.receivedPlayers .. " players, sender reported " .. (sentCount or 0) .. " players in " .. (batchCount or 0) .. " batches")
             
             -- Convert to standard sync data format
             local syncData = {
@@ -1710,7 +1817,7 @@ function UI:HandleMultiSyncMessage(message, sender, distribution)
             local popup = StaticPopup_Show("RAIDSANCTIONS_SYNC_CONFIRM", sender)
             if popup then
                 popup.data = syncData
-                print("DEBUG: Multi-sync data stored in popup.data (" .. session.receivedPlayers .. " players)")
+                print("DEBUG: Multi-sync data stored in popup.data (" .. session.receivedPlayers .. " players from " .. (batchCount or 0) .. " compressed batches)")
             else
                 print("ERROR: Failed to show StaticPopup for multi-sync")
             end
