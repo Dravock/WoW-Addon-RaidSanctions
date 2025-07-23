@@ -307,21 +307,8 @@ function UI:CreateBottomPanel()
 end
 
 function UI:SetupEventHandlers()
-    -- Escape-Key Handler direkt im Frame
-    mainFrame:SetScript("OnKeyDown", function(self, key)
-        if key == "ESCAPE" then
-            self:Hide()
-        end
-    end)
-    
-    -- Enable keyboard input when frame is shown
-    mainFrame:SetScript("OnShow", function(self)
-        self:EnableKeyboard(true)
-    end)
-    
-    mainFrame:SetScript("OnHide", function(self)
-        self:EnableKeyboard(false)
-    end)
+    -- Note: No keyboard capture for main frame to allow normal gameplay
+    -- ESC key handling is removed to allow normal ESC functionality in WoW
 end
 
 function UI:RefreshPlayerList()
@@ -892,6 +879,9 @@ function UI:ShowSeasonStatsWindow()
     -- Update season data before showing to ensure it's current
     RaidSanctions.Logic:UpdateSeasonData()
     
+    -- Disable main frame buttons while season stats is open
+    self:SetMainFrameButtonsEnabled(false)
+    
     self.seasonStatsFrame:Show()
 end
 
@@ -1023,7 +1013,7 @@ function UI:CreateOptionsWindow()
     optionsFrame.tabContents = tabContents
     optionsFrame.contentFrame = contentFrame
     
-    -- ESC key handler for options frame
+    -- ESC key handler for options frame (only for this specific frame)
     optionsFrame:SetScript("OnKeyDown", function(self, key)
         if key == "ESCAPE" then
             self:Hide()
@@ -1031,7 +1021,7 @@ function UI:CreateOptionsWindow()
     end)
     
     optionsFrame:SetScript("OnShow", function(self)
-        self:EnableKeyboard(true)
+        self:EnableKeyboard(true) -- Only capture ESC for this frame
     end)
     
     optionsFrame:SetScript("OnHide", function(self)
@@ -1065,16 +1055,8 @@ function UI:CreateSeasonStatsWindow()
     seasonStatsFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
     seasonStatsFrame:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
     
-    -- Make movable
-    seasonStatsFrame:SetMovable(true)
+    -- Only enable mouse input (not movable)
     seasonStatsFrame:EnableMouse(true)
-    seasonStatsFrame:RegisterForDrag("LeftButton")
-    seasonStatsFrame:SetScript("OnDragStart", function(self)
-        self:StartMoving()
-    end)
-    seasonStatsFrame:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-    end)
     
     -- Title for season stats frame
     local seasonStatsTitle = seasonStatsFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
@@ -1087,6 +1069,8 @@ function UI:CreateSeasonStatsWindow()
     seasonStatsCloseButton:SetPoint("TOPRIGHT", -5, -5)
     seasonStatsCloseButton:SetScript("OnClick", function()
         seasonStatsFrame:Hide()
+        -- Re-enable main frame buttons when closing
+        UI:SetMainFrameButtonsEnabled(true)
     end)
     
     -- Header row for column titles (same as main window)
@@ -1165,21 +1149,25 @@ function UI:CreateSeasonStatsWindow()
     seasonStatsFrame.contentFrame = contentFrame
     seasonStatsFrame.playerRows = {}
     
-    -- ESC key handler for season stats frame
+    -- ESC key handler for season stats frame (only for this specific frame)
     seasonStatsFrame:SetScript("OnKeyDown", function(self, key)
         if key == "ESCAPE" then
             self:Hide()
+            -- Re-enable main frame buttons when closing with ESC
+            UI:SetMainFrameButtonsEnabled(true)
         end
     end)
     
     seasonStatsFrame:SetScript("OnShow", function(self)
-        self:EnableKeyboard(true)
+        self:EnableKeyboard(true) -- Only capture ESC for this frame
         -- Refresh season data when showing
         UI:RefreshSeasonPlayerList()
     end)
     
     seasonStatsFrame:SetScript("OnHide", function(self)
         self:EnableKeyboard(false)
+        -- Re-enable main frame buttons when season stats is closed
+        UI:SetMainFrameButtonsEnabled(true)
     end)
     
     -- Hidden by default
@@ -1187,6 +1175,61 @@ function UI:CreateSeasonStatsWindow()
     
     -- Store frame
     self.seasonStatsFrame = seasonStatsFrame
+end
+
+function UI:SetMainFrameButtonsEnabled(enabled)
+    if not mainFrame then
+        return
+    end
+    
+    -- Store references to buttons that should be disabled
+    if not mainFrame.controllableButtons then
+        mainFrame.controllableButtons = {}
+        
+        -- Find all buttons in main frame (except close button)
+        local function findButtons(frame)
+            if frame.GetObjectType and frame:GetObjectType() == "Button" then
+                local name = frame:GetName()
+                -- Don't disable close button and specific system buttons
+                if name ~= "RaidSanctionsMainFrameCloseButton" and 
+                   not string.find(name or "", "ScrollBar") then
+                    table.insert(mainFrame.controllableButtons, frame)
+                end
+            end
+            
+            -- Check child frames
+            local children = {frame:GetChildren()}
+            for _, child in ipairs(children) do
+                findButtons(child)
+            end
+        end
+        
+        findButtons(mainFrame)
+    end
+    
+    -- Enable/disable all controllable buttons
+    for _, button in ipairs(mainFrame.controllableButtons) do
+        if button:IsObjectType("Button") then
+            button:SetEnabled(enabled)
+            if enabled then
+                button:SetAlpha(1.0)
+            else
+                button:SetAlpha(0.5) -- Visual indication that button is disabled
+            end
+        end
+    end
+    
+    -- Also disable/enable player row clicks
+    for _, row in ipairs(playerRows) do
+        if row:IsObjectType("Button") then
+            row:SetEnabled(enabled)
+            if enabled then
+                row:SetAlpha(1.0)
+            else
+                row:SetAlpha(0.7)
+            end
+        end
+    end
 end
 
 function UI:CreatePenaltiesTabContent(content)
