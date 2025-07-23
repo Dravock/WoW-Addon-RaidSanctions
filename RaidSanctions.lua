@@ -49,6 +49,12 @@ function OnGroupRosterUpdate()
     -- Forward Logic event
     if RaidSanctions.Logic then
         RaidSanctions.Logic:OnGroupRosterUpdate()
+        
+        -- Check if player left group/raid and trigger cleanup
+        if not IsInGroup() and not IsInRaid() then
+            -- Player is no longer in any group - cleanup random players with 0 penalties
+            RaidSanctions.Logic:CleanupSeasonDataRandomPlayers()
+        end
     end
 end
 
