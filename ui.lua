@@ -888,7 +888,7 @@ end
 function UI:CreateOptionsWindow()
     -- Create options frame
     local optionsFrame = CreateFrame("Frame", "RaidSanctionsOptionsFrame", mainFrame, "BackdropTemplate")
-    optionsFrame:SetSize(500, 400)
+    optionsFrame:SetSize(500, 500) -- Increased from 400 to 500 for more content space
     optionsFrame:SetPoint("CENTER", mainFrame, "CENTER") -- Centered in main window
     optionsFrame:SetFrameStrata("HIGH")
     optionsFrame:SetFrameLevel(200) -- Above main window
@@ -1311,6 +1311,27 @@ function UI:CreatePenaltiesTabContent(content)
         UI:ResetPenaltiesToDefault(editBoxes)
     end)
     
+    -- Post to Raid button
+    local postRaidButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    postRaidButton:SetSize(100, 30)
+    postRaidButton:SetPoint("LEFT", resetButton, "RIGHT", 10, 0)
+    postRaidButton:SetText("Post to Raid")
+    postRaidButton:GetFontString():SetTextColor(0.2, 0.8, 1) -- Light blue
+    
+    postRaidButton:SetScript("OnClick", function()
+        UI:PostPenaltyConfigToRaid()
+    end)
+    
+    postRaidButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Post penalty configuration to raid chat")
+        GameTooltip:AddLine("Posts current penalty amounts to raid chat so everyone knows the rules.", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    postRaidButton:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    
     -- Help text
     local helpText = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     helpText:SetPoint("TOPLEFT", 20, buttonY - 40)
@@ -1371,6 +1392,46 @@ function UI:ResetPenaltiesToDefault(editBoxes)
         editBox:SetText("1")
     end
     print("All penalties reset to 1 Gold. Click 'Save' to apply changes.")
+end
+
+function UI:PostPenaltyConfigToRaid()
+    -- Get current penalty configuration
+    local penalties = Logic:GetPenalties()
+    
+    -- Check if we're in a raid or group
+    if not IsInRaid() and not IsInGroup() then
+        print("You must be in a raid or group to post penalty configuration.")
+        return
+    end
+    
+    -- Determine chat channel (raid takes priority over party)
+    local chatChannel = IsInRaid() and "RAID" or "PARTY"
+    
+    -- Post header
+    SendChatMessage("RaidSanctions - Current Penalty Configuration:", chatChannel)
+    
+    -- Sort penalties by label length (longest first) for better readability
+    local sortedPenalties = {}
+    for reason, amount in pairs(penalties) do
+        table.insert(sortedPenalties, {reason = reason, amount = amount})
+    end
+    
+    table.sort(sortedPenalties, function(a, b)
+        -- Sort by label length first (longest first), then by amount if same length
+        if string.len(a.reason) == string.len(b.reason) then
+            return a.amount > b.amount
+        else
+            return string.len(a.reason) > string.len(b.reason)
+        end
+    end)
+    
+    -- Post each penalty configuration
+    for _, penalty in ipairs(sortedPenalties) do
+        local message = penalty.reason .. ": " .. Logic:FormatGold(penalty.amount)
+        SendChatMessage(message, chatChannel)
+    end
+    
+    print("Penalty configuration posted to " .. (IsInRaid() and "raid" or "party") .. " chat.")
 end
 
 -- Static popup for reset confirmation
