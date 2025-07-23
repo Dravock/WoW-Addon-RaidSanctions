@@ -14,7 +14,7 @@ local format = string.format
 local pairs, ipairs = pairs, ipairs
 
 -- UI Constants
-local FRAME_WIDTH = 800
+local FRAME_WIDTH = 900  -- Increased from 800 to 900
 local FRAME_HEIGHT = 700  -- More height for bottom button bar
 local ROW_HEIGHT = 30
 local BUTTON_WIDTH = 80
@@ -191,7 +191,7 @@ function UI:CreateBottomPanel()
     local yOffset = -30
     for reason, amount in pairs(Logic:GetPenalties()) do
         local button = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-        button:SetSize(140, BUTTON_HEIGHT)
+        button:SetSize(160, BUTTON_HEIGHT) -- Increased from 140 to 160
         button:SetPoint("TOPLEFT", xOffset, yOffset)
         button:SetText(reason .. " (" .. Logic:FormatGold(amount) .. ")")
         
@@ -212,8 +212,8 @@ function UI:CreateBottomPanel()
             GameTooltip:Hide()
         end)
         
-        xOffset = xOffset + 150
-        if xOffset > FRAME_WIDTH - 160 then -- Next line
+        xOffset = xOffset + 170 -- Increased spacing from 150 to 170
+        if xOffset > FRAME_WIDTH - 180 then -- Adjusted break point from 160 to 180
             xOffset = 10
             yOffset = yOffset - 30
         end
