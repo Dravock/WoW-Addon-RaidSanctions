@@ -3038,6 +3038,9 @@ function UI:SavePenaltySettings(editBoxes)
         Logic:SetCustomPenalties(newPenalties)
         print("Penalty settings saved!")
         
+        -- Send live sync update for penalty configuration changes
+        self:SendPenaltyConfigSync(newPenalties)
+        
         -- Refresh main UI elements that show penalty values
         if mainFrame and mainFrame:IsShown() then
             -- Recreate bottom panel with new penalty values
@@ -3708,6 +3711,48 @@ function UI:SendLiveSyncUpdate(actionType, data)
     lastSyncTimestamp = timestamp
 end
 
+function UI:SendPenaltyConfigSync(newPenalties)
+    if not liveSyncEnabled then
+        if devMode then
+            print("DEV DEBUG: SendPenaltyConfigSync called but liveSyncEnabled is false")
+        end
+        return
+    end
+    
+    if not self:IsPlayerAuthorized() and not devMode then
+        if devMode then
+            print("DEV DEBUG: SendPenaltyConfigSync called but player not authorized")
+        else
+            return
+        end
+    end
+    
+    local channel = IsInRaid() and "RAID" or "PARTY"
+    local sender = UnitName("player")
+    local timestamp = time()
+    
+    -- Create penalty config sync message
+    local message = "LIVE_UPDATE|ACTION:PENALTY_CONFIG|SENDER:" .. sender .. "|T:" .. timestamp .. "|PENALTIES:"
+    
+    -- Add penalty data in compact format
+    local penaltyPairs = {}
+    for reason, amount in pairs(newPenalties) do
+        table.insert(penaltyPairs, reason .. "=" .. amount)
+    end
+    message = message .. table.concat(penaltyPairs, ";")
+    
+    if devMode then
+        print("DEV DEBUG: Sending penalty config sync - " .. message:sub(1, 100) .. "...")
+    end
+    
+    local success = C_ChatInfo.SendAddonMessage("RaidSanctions", message, channel)
+    if devMode then
+        print("DEV DEBUG: SendPenaltyConfigSync result: " .. tostring(success))
+    end
+    
+    lastSyncTimestamp = timestamp
+end
+
 function UI:HandleLiveSyncMessage(message, sender, distribution)
     -- Ignore own messages
     if sender == UnitName("player") then
@@ -3772,17 +3817,14 @@ function UI:HandleLiveSyncUpdate(message, sender)
     -- Parse update data
     local actionType = message:match("ACTION:([^|]+)")
     local timestamp = tonumber(message:match("T:([^|]+)"))
-    local playerName = message:match("PLAYER:([^|]+)")
-    local reason = message:match("REASON:([^|]+)")
-    local amount = tonumber(message:match("AMOUNT:([^|]+)"))
     
     if devMode then
-        print("DEV DEBUG: HandleLiveSyncUpdate - actionType: " .. tostring(actionType) .. ", player: " .. tostring(playerName) .. ", reason: " .. tostring(reason))
+        print("DEV DEBUG: HandleLiveSyncUpdate - actionType: " .. tostring(actionType) .. ", timestamp: " .. tostring(timestamp))
     end
     
-    if not actionType or not timestamp or not playerName or not reason or not amount then
+    if not actionType or not timestamp then
         if devMode then
-            print("DEV DEBUG: Invalid message format in HandleLiveSyncUpdate")
+            print("DEV DEBUG: Invalid message format in HandleLiveSyncUpdate - missing actionType or timestamp")
         end
         return
     end
@@ -3795,28 +3837,79 @@ function UI:HandleLiveSyncUpdate(message, sender)
         return
     end
     
-    -- Apply the penalty change locally
-    if actionType == "PENALTY_ADD" then
-        if RaidSanctions.Logic:ApplyPenalty(playerName, reason, amount) then
-            print("Live Sync: Applied penalty '" .. reason .. "' to " .. playerName .. " (from " .. sender .. ")")
+    -- Handle different action types with different parsing logic
+    if actionType == "PENALTY_CONFIG" then
+        -- Handle penalty configuration updates
+        local penaltiesData = message:match("PENALTIES:([^|]*)")
+        if penaltiesData then
+            local newPenalties = {}
+            for penaltyPair in penaltiesData:gmatch("([^;]+)") do
+                local reason, amount = penaltyPair:match("([^=]+)=([^=]+)")
+                if reason and amount then
+                    newPenalties[reason] = tonumber(amount)
+                end
+            end
+            
+            -- Apply the new penalty configuration
+            if Logic.SetCustomPenalties then
+                Logic:SetCustomPenalties(newPenalties)
+                print("Live Sync: Penalty configuration updated by " .. sender)
+                
+                -- Refresh UI to show new penalty values
+                if mainFrame and mainFrame:IsShown() then
+                    -- Recreate bottom panel with new penalty values
+                    if mainFrame.bottomPanel then
+                        mainFrame.bottomPanel:Hide()
+                        mainFrame.bottomPanel:SetParent(nil)
+                        mainFrame.bottomPanel = nil
+                    end
+                    self:CreateBottomPanel()
+                    
+                    -- Refresh player list to update penalty counters
+                    self:RefreshPlayerList()
+                end
+            end
         end
-    elseif actionType == "PENALTY_REMOVE" then
-        if RaidSanctions.Logic:RemovePenalty(playerName, reason, amount) then
-            print("Live Sync: Removed penalty '" .. reason .. "' from " .. playerName .. " (from " .. sender .. ")")
+    else
+        -- Handle penalty action updates (existing logic)
+        local playerName = message:match("PLAYER:([^|]+)")
+        local reason = message:match("REASON:([^|]+)")
+        local amount = tonumber(message:match("AMOUNT:([^|]+)"))
+        
+        if devMode then
+            print("DEV DEBUG: HandleLiveSyncUpdate - player: " .. tostring(playerName) .. ", reason: " .. tostring(reason) .. ", amount: " .. tostring(amount))
         end
-    elseif actionType == "PLAYER_PAID" then
-        if RaidSanctions.Logic:ResetPlayerPenalties(playerName) then
-            print("Live Sync: Player " .. playerName .. " marked as paid (from " .. sender .. ")")
+        
+        if not playerName or not reason or not amount then
+            if devMode then
+                print("DEV DEBUG: Invalid penalty action message format in HandleLiveSyncUpdate")
+            end
+            return
         end
-    elseif actionType == "SESSION_RESET" then
-        if RaidSanctions.Logic:ResetSessionData() then
-            print("Live Sync: Session data reset by " .. sender)
+        
+        -- Apply the penalty change locally
+        if actionType == "PENALTY_ADD" then
+            if RaidSanctions.Logic:ApplyPenalty(playerName, reason, amount) then
+                print("Live Sync: Applied penalty '" .. reason .. "' to " .. playerName .. " (from " .. sender .. ")")
+            end
+        elseif actionType == "PENALTY_REMOVE" then
+            if RaidSanctions.Logic:RemovePenalty(playerName, reason, amount) then
+                print("Live Sync: Removed penalty '" .. reason .. "' from " .. playerName .. " (from " .. sender .. ")")
+            end
+        elseif actionType == "PLAYER_PAID" then
+            if RaidSanctions.Logic:ResetPlayerPenalties(playerName) then
+                print("Live Sync: Player " .. playerName .. " marked as paid (from " .. sender .. ")")
+            end
+        elseif actionType == "SESSION_RESET" then
+            if RaidSanctions.Logic:ResetSessionData() then
+                print("Live Sync: Session data reset by " .. sender)
+            end
         end
-    end
-    
-    -- Update UI if visible
-    if mainFrame and mainFrame:IsShown() then
-        self:RefreshPlayerList()
+        
+        -- Update UI if visible
+        if mainFrame and mainFrame:IsShown() then
+            self:RefreshPlayerList()
+        end
     end
     
     lastSyncTimestamp = timestamp
