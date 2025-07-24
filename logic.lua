@@ -274,6 +274,8 @@ function Logic:GetPlayerTotal(playerName)
 end
 
 function Logic:ResetSessionData()
+    -- Add current session data to season data before resetting
+    self:UpdateSeasonData()
     local session = self:GetCurrentSession()
     if session then
         session.players = {}

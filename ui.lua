@@ -572,12 +572,12 @@ function UI:RefreshPlayerList()
     -- Update Send Mails button status
     self:UpdateSendMailsButtonStatus()
     
-    -- Separate players by guild membership
+    -- Separate players by guild membership (improved cross-realm detection)
     local guildMembers = {}
     local randomPlayers = {}
     
     for playerName, playerData in pairs(session.players) do
-        if RaidSanctions.Logic:IsPlayerInGuild(playerName) then
+        if self:IsPlayerInGuildExtended(playerName) then
             table.insert(guildMembers, {name = playerName, data = playerData})
         else
             table.insert(randomPlayers, {name = playerName, data = playerData})
@@ -646,8 +646,37 @@ function UI:RefreshSeasonPlayerList()
     end
     wipe(seasonFrame.playerRows)
     
-    -- Get categorized season data from Logic module
-    local guildPlayers, randomPlayers = RaidSanctions.Logic:GetSeasonPlayersByCategory()
+    -- Get season data and categorize with improved guild detection
+    local seasonData = RaidSanctions.Logic:GetSeasonData()
+    local guildPlayers = {}
+    local randomPlayers = {}
+    
+    if seasonData and seasonData.players then
+        for playerName, playerData in pairs(seasonData.players) do
+            if self:IsPlayerInGuildExtended(playerName) then
+                table.insert(guildPlayers, {
+                    name = playerName,
+                    totalAmount = playerData.totalAmount or 0,
+                    penalties = playerData.penalties or {},
+                    class = playerData.class
+                })
+            else
+                table.insert(randomPlayers, {
+                    name = playerName,
+                    totalAmount = playerData.totalAmount or 0,
+                    penalties = playerData.penalties or {},
+                    class = playerData.class
+                })
+            end
+        end
+        
+        -- Sort both lists by penalty amount (highest first)
+        local sortFunction = function(a, b)
+            return (a.totalAmount or 0) > (b.totalAmount or 0)
+        end
+        table.sort(guildPlayers, sortFunction)
+        table.sort(randomPlayers, sortFunction)
+    end
     
     -- Check if we have any data
     if #guildPlayers == 0 and #randomPlayers == 0 then
@@ -788,6 +817,87 @@ end
 function UI:IsGuildMaster()
     -- Check if player is Guild Master (for mail sending privileges)
     return IsGuildLeader()
+end
+
+function UI:IsPlayerInGuildExtended(playerName)
+    -- Enhanced guild detection for cross-realm guild members
+    if not playerName or playerName == "" then
+        return false
+    end
+    
+    -- First, try the Logic module's basic check
+    if RaidSanctions.Logic and RaidSanctions.Logic.IsPlayerInGuild then
+        if RaidSanctions.Logic:IsPlayerInGuild(playerName) then
+            return true
+        end
+    end
+    
+    -- If not found locally, check if player is in current group/raid and has guild info
+    if IsInRaid() then
+        local numMembers = GetNumGroupMembers()
+        for i = 1, numMembers do
+            local name, rank, subgroup, level, class, fileName, zone, online, isDead, role, isML, combatRole = GetRaidRosterInfo(i)
+            if name then
+                -- Remove realm name for comparison
+                local baseName = name:match("([^-]+)") or name
+                local playerBaseName = playerName:match("([^-]+)") or playerName
+                
+                if baseName == playerBaseName then
+                    -- Check if this player has guild info
+                    local guildName, guildRankName, guildRankIndex = GetGuildInfo(name)
+                    if guildName then
+                        -- Player is in a guild, check if it's the same guild as ours
+                        local myGuildName = GetGuildInfo("player")
+                        if myGuildName and guildName == myGuildName then
+                            return true
+                        end
+                    end
+                end
+            end
+        end
+    elseif IsInGroup() then
+        local numMembers = GetNumSubgroupMembers()
+        for i = 1, numMembers do
+            local name = GetSubgroupMemberName(i) or UnitName("party" .. i)
+            if name then
+                -- Remove realm name for comparison
+                local baseName = name:match("([^-]+)") or name
+                local playerBaseName = playerName:match("([^-]+)") or playerName
+                
+                if baseName == playerBaseName then
+                    -- Check if this player has guild info
+                    local guildName, guildRankName, guildRankIndex = GetGuildInfo(name)
+                    if guildName then
+                        -- Player is in a guild, check if it's the same guild as ours
+                        local myGuildName = GetGuildInfo("player")
+                        if myGuildName and guildName == myGuildName then
+                            return true
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Additional check: Look through guild roster for cross-realm members
+    if IsInGuild() then
+        local numMembers = GetNumGuildMembers()
+        for i = 1, numMembers do
+            local name, rankName, rankIndex, level, classDisplayName, zone, publicNote, officerNote, isOnline, status, class, achievementPoints, achievementRank, isMobile, canSoR, repStanding, guid = GetGuildRosterInfo(i)
+            if name then
+                -- Remove realm name for comparison
+                local baseName = name:match("([^-]+)") or name
+                local playerBaseName = playerName:match("([^-]+)") or playerName
+                
+                if baseName == playerBaseName then
+                    return true
+                end
+            end
+        end
+    end
+    
+    -- If all checks fail, it's not a guild member
+    return false
 end
 
 function UI:CreateSectionHeader(title, yOffset)
@@ -3226,11 +3336,11 @@ function UI:SendPenaltyMails()
         return
     end
     
-    -- Get guild members with penalties > 0 from season data
+    -- Get guild members with penalties > 0 from season data (improved cross-realm detection)
     local guildPlayersWithPenalties = {}
     for playerName, playerData in pairs(seasonData.players) do
         -- Check if player is guild member and has penalties
-        if RaidSanctions.Logic:IsPlayerInGuild(playerName) and 
+        if self:IsPlayerInGuildExtended(playerName) and 
            playerData.totalAmount and playerData.totalAmount > 0 then
             table.insert(guildPlayersWithPenalties, {
                 name = playerName,
