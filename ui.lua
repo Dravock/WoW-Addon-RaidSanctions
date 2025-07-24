@@ -34,7 +34,7 @@ local liveSyncParticipants = {}
 local lastSyncTimestamp = 0
 
 -- Dev Mode Variable (enables testing without guild restrictions)
-local devMode = true -- Set to true for testing, false for production
+local devMode = false -- Set to true for testing, false for production
 
 function UI:Initialize()
     if mainFrame then
