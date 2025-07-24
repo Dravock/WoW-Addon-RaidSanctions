@@ -33,9 +33,16 @@ local isLiveSyncHost = false
 local liveSyncParticipants = {}
 local lastSyncTimestamp = 0
 
+-- Dev Mode Variable (enables testing without guild restrictions)
+local devMode = true -- Set to true for testing, false for production
+
 function UI:Initialize()
     if mainFrame then
         return -- Already initialized
+    end
+    
+    if devMode then
+        print("DEV DEBUG: UI:Initialize called")
     end
     
     self:CreateMainFrame()
@@ -46,7 +53,10 @@ function UI:Initialize()
     
     -- Auto-initialize live sync if already in a group
     C_Timer.After(2.0, function()
-        if IsInRaid() or IsInGroup() then
+        if devMode then
+            print("DEV DEBUG: Auto-initializing live sync after 2 seconds")
+        end
+        if IsInRaid() or IsInGroup() or devMode then
             self:InitializeLiveSync()
         end
     end)
@@ -394,10 +404,36 @@ function UI:CreateBottomPanel()
     -- Store reference for updates
     mainFrame.liveSyncButton = liveSyncButton
     
+    -- "Manual Sync" Button (next to Live Sync)
+    local manualSyncButton = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
+    manualSyncButton:SetSize(90, BUTTON_HEIGHT)
+    manualSyncButton:SetPoint("TOPLEFT", 570, managementYOffset) -- Next to Live Sync button
+    manualSyncButton:SetText("Manual Sync")
+    manualSyncButton:GetFontString():SetTextColor(0.8, 0.8, 1) -- Light blue
+    
+    manualSyncButton:SetScript("OnClick", function()
+        UI:SyncSessionData()
+    end)
+    
+    manualSyncButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Manual Session Sync")
+        GameTooltip:AddLine("Manually sync all session data with group members.", 1, 1, 1)
+        GameTooltip:AddLine("Use this if live sync is not working properly.", 0.8, 0.8, 0.8)
+        GameTooltip:AddLine("Requires leader permissions.", 0.8, 0.8, 0.8)
+        GameTooltip:Show()
+    end)
+    manualSyncButton:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    
+    -- Store reference for updates
+    mainFrame.manualSyncButton = manualSyncButton
+    
     -- "Send Penalty Mails" Button (Guild Master only)
     local sendMailsButton = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
     sendMailsButton:SetSize(130, BUTTON_HEIGHT)
-    sendMailsButton:SetPoint("TOPLEFT", 570, managementYOffset) -- Next to Sync Session button
+    sendMailsButton:SetPoint("TOPLEFT", 670, managementYOffset) -- Moved right to make room for Manual Sync
     sendMailsButton:SetText("Send Penalty Mails")
     sendMailsButton:GetFontString():SetTextColor(1, 0.8, 0.2) -- Gold color for GM exclusive
     
@@ -439,7 +475,7 @@ function UI:HandleRaidStateChange()
         print("RaidSanctions: Joined raid group - automatically resetting session data for new raid.")
         
         -- Reset session data (same logic as manual reset)
-        if RaidSanctions.Logic:ResetSession() then
+        if RaidSanctions.Logic:ResetSessionData() then
             print("RaidSanctions: Session data cleared for new raid.")
             
             -- Refresh UI if main frame is visible
@@ -714,6 +750,11 @@ end
 function UI:IsPlayerAuthorized()
     -- Check if player has permission to use penalty actions
     -- Player must be raid leader or raid assistant
+    
+    -- Dev mode bypasses all restrictions
+    if devMode then
+        return true
+    end
     
     local inRaid = IsInRaid()
     local inGroup = IsInGroup()
@@ -1733,6 +1774,10 @@ function UI:HandleMultiSyncMessage(message, sender, distribution)
         return
     end
     
+    if devMode then
+        print("DEV DEBUG: HandleMultiSyncMessage - sender: " .. sender .. ", message type: " .. (message:match("^([^|]+)") or "unknown"))
+    end
+    
     -- Check for live sync messages first
     if message:match("^LIVE_SYNC_START") or message:match("^LIVE_UPDATE") or message:match("^LIVE_SYNC_JOIN") then
         self:HandleLiveSyncMessage(message, sender, distribution)
@@ -2297,6 +2342,7 @@ function UI:CreateOptionsWindow()
         {name = "Penalties", key = "penalties"},
         {name = "UI", key = "interface"},
         {name = "Behavior", key = "behavior"},
+        {name = "Dev Mode", key = "devmode"},
         {name = "Export", key = "export"}
     }
     
@@ -2304,8 +2350,8 @@ function UI:CreateOptionsWindow()
     local tabY = -50
     for i, data in ipairs(tabData) do
         local tab = CreateFrame("Button", nil, optionsFrame, "UIPanelButtonTemplate")
-        tab:SetSize(100, 30)
-        tab:SetPoint("TOPLEFT", 10 + (i-1) * 105, tabY)
+        tab:SetSize(96, 30) -- Increased from 90 to 96 to better fit "Dev Mode" text
+        tab:SetPoint("TOPLEFT", 6 + (i-1) * 98, tabY) -- Adjusted spacing and start position
         tab:SetText(data.name)
         
         -- Tab click handler
@@ -2340,6 +2386,9 @@ function UI:CreateOptionsWindow()
         if data.key == "penalties" then
             -- Penalties tab content
             UI:CreatePenaltiesTabContent(content)
+        elseif data.key == "devmode" then
+            -- Dev Mode tab content
+            UI:CreateDevModeTabContent(content)
         else
             -- Title for each tab
             local title = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -3054,6 +3103,106 @@ function UI:PostPenaltyConfigToRaid()
     print("Penalty configuration posted to " .. (IsInRaid() and "raid" or "party") .. " chat.")
 end
 
+function UI:CreateDevModeTabContent(content)
+    -- Title for dev mode tab
+    local title = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    title:SetPoint("TOP", 0, -15)
+    title:SetText("Development Mode Settings")
+    title:SetTextColor(1, 0.8, 0)
+    
+    -- Current dev mode status
+    local statusText = content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    statusText:SetPoint("TOP", title, "BOTTOM", 0, -20)
+    statusText:SetText("Current Status: " .. (devMode and "ENABLED" or "DISABLED"))
+    statusText:SetTextColor(devMode and 0.2 or 1, devMode and 1 or 0.2, 0.2)
+    
+    -- Description
+    local description = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    description:SetPoint("TOP", statusText, "BOTTOM", 0, -15)
+    description:SetWidth(400)
+    description:SetJustifyH("LEFT")
+    description:SetText("Development Mode bypasses all authorization checks and enables testing features:\n\n• No guild restrictions\n• No group leader requirements\n• Extended debug logging\n• Live sync works without group\n• Testing commands available")
+    description:SetTextColor(0.8, 0.8, 0.8)
+    
+    -- Toggle button
+    local toggleButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    toggleButton:SetSize(150, 35)
+    toggleButton:SetPoint("TOP", description, "BOTTOM", 0, -30)
+    toggleButton:SetText(devMode and "Disable Dev Mode" or "Enable Dev Mode")
+    toggleButton:GetFontString():SetTextColor(devMode and 1 or 0.2, devMode and 0.2 or 1, 0.2)
+    
+    toggleButton:SetScript("OnClick", function()
+        UI:ToggleDevMode()
+        -- Update the display
+        statusText:SetText("Current Status: " .. (devMode and "ENABLED" or "DISABLED"))
+        statusText:SetTextColor(devMode and 0.2 or 1, devMode and 1 or 0.2, 0.2)
+        toggleButton:SetText(devMode and "Disable Dev Mode" or "Enable Dev Mode")
+        toggleButton:GetFontString():SetTextColor(devMode and 1 or 0.2, devMode and 0.2 or 1, 0.2)
+    end)
+    
+    -- Test buttons section
+    local testTitle = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    testTitle:SetPoint("TOP", toggleButton, "BOTTOM", 0, -40)
+    testTitle:SetText("Testing Commands")
+    testTitle:SetTextColor(1, 0.8, 0)
+    
+    -- Test Live Sync button
+    local testLiveSyncButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    testLiveSyncButton:SetSize(120, 30)
+    testLiveSyncButton:SetPoint("TOP", testTitle, "BOTTOM", -65, -15)
+    testLiveSyncButton:SetText("Test Live Sync")
+    testLiveSyncButton:GetFontString():SetTextColor(0.2, 0.8, 1)
+    
+    testLiveSyncButton:SetScript("OnClick", function()
+        UI:TestLiveSync()
+    end)
+    
+    testLiveSyncButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Test Live Sync Status")
+        GameTooltip:AddLine("Shows current live sync state and connection info", 1, 1, 1)
+        GameTooltip:AddLine("Only available in dev mode", 0.8, 0.8, 0.8)
+        GameTooltip:Show()
+    end)
+    testLiveSyncButton:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    
+    -- Manual Sync button
+    local manualSyncButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    manualSyncButton:SetSize(120, 30)
+    manualSyncButton:SetPoint("TOP", testTitle, "BOTTOM", 65, -15)
+    manualSyncButton:SetText("Manual Sync")
+    manualSyncButton:GetFontString():SetTextColor(0.8, 0.8, 1)
+    
+    manualSyncButton:SetScript("OnClick", function()
+        UI:SyncSessionData()
+    end)
+    
+    manualSyncButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Manual Session Sync")
+        GameTooltip:AddLine("Force sync all session data with group", 1, 1, 1)
+        GameTooltip:AddLine("Use if live sync is not working", 0.8, 0.8, 0.8)
+        GameTooltip:Show()
+    end)
+    manualSyncButton:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    
+    -- Warning text
+    local warningText = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    warningText:SetPoint("TOP", testLiveSyncButton, "BOTTOM", 0, -40)
+    warningText:SetWidth(400)
+    warningText:SetJustifyH("CENTER")
+    warningText:SetText("⚠️ WARNING ⚠️\n\nDev Mode should only be used for testing!\nDisable it for normal raid usage.")
+    warningText:SetTextColor(1, 0.8, 0.2)
+    
+    -- Store references for updates
+    content.statusText = statusText
+    content.toggleButton = toggleButton
+end
+
 function UI:SendPenaltyMails()
     -- Check Guild Master authorization first
     if not self:IsGuildMaster() then
@@ -3347,6 +3496,10 @@ StaticPopupDialogs["RAIDSANCTIONS_SEND_MAILS_CONFIRM"] = {
 }
 
 function UI:ToggleLiveSync()
+    if devMode then
+        print("DEV DEBUG: ToggleLiveSync called - current state: " .. tostring(liveSyncEnabled))
+    end
+    
     if not self:IsPlayerAuthorized() then
         print("Error: You must be raid leader or raid assistant to control live sync.")
         return
@@ -3369,17 +3522,31 @@ function UI:UpdateLiveSyncButtonStatus()
     
     local button = mainFrame.liveSyncButton
     
+    if devMode then
+        print("DEV DEBUG: UpdateLiveSyncButtonStatus - liveSyncEnabled: " .. tostring(liveSyncEnabled) .. ", isLiveSyncHost: " .. tostring(isLiveSyncHost))
+    end
+    
     if liveSyncEnabled then
         if isLiveSyncHost then
             button:SetText("Live Sync: HOST")
             button:GetFontString():SetTextColor(0.2, 1, 0.2) -- Green for host
+            if devMode then
+                print("DEV DEBUG: Button set to HOST (green)")
+            end
         else
-            button:SetText("Live Sync: ON")
-            button:GetFontString():SetTextColor(0.2, 1, 1) -- Cyan for participant
+            -- Check if we're waiting for host or connected
+            button:SetText("Live Sync: READY")
+            button:GetFontString():SetTextColor(1, 1, 0.2) -- Yellow when waiting for host
+            if devMode then
+                print("DEV DEBUG: Button set to READY (yellow)")
+            end
         end
     else
         button:SetText("Live Sync: OFF")
         button:GetFontString():SetTextColor(0.8, 0.8, 0.8) -- Gray when off
+        if devMode then
+            print("DEV DEBUG: Button set to OFF (gray)")
+        end
     end
 end
 
@@ -3388,16 +3555,58 @@ end
 -- ========================================
 
 function UI:InitializeLiveSync()
-    -- Auto-start live sync when joining a raid/group as leader
-    local isLeader = UnitIsGroupLeader("player")
-    local inGroup = IsInRaid() or IsInGroup()
-    
-    if isLeader and inGroup then
-        self:StartLiveSyncAsHost()
-    elseif inGroup then
-        liveSyncEnabled = true
-        print("RaidSanctions: Live sync ready - waiting for host.")
+    if devMode then
+        print("DEV DEBUG: InitializeLiveSync called")
     end
+    
+    -- Check if we're in a group
+    local inGroup = IsInRaid() or IsInGroup()
+    if not inGroup then
+        if devMode then
+            print("DEV DEBUG: Not in group, enabling dev mode live sync")
+            liveSyncEnabled = true
+            isLiveSyncHost = true
+            liveSyncParticipants = {}
+            lastSyncTimestamp = time()
+            print("RaidSanctions: DEV MODE - Live sync started as HOST")
+            self:UpdateLiveSyncButtonStatus()
+            return
+        else
+            print("RaidSanctions: Must be in a raid or group to use live sync.")
+            return
+        end
+    end
+    
+    -- Check for flexible host/client assignment
+    local isLeader = UnitIsGroupLeader("player")
+    local isAuthorized = self:IsPlayerAuthorized()
+    
+    if devMode then
+        print("DEV DEBUG: In group - isLeader: " .. tostring(isLeader) .. ", isAuthorized: " .. tostring(isAuthorized))
+    end
+    
+    -- Flexible assignment: Any authorized player can become host if no host exists
+    if isAuthorized then
+        -- Wait briefly to see if someone else is already hosting
+        C_Timer.After(1.5, function()
+            if not liveSyncEnabled then
+                if devMode then
+                    print("DEV DEBUG: No host detected, becoming host")
+                end
+                self:StartLiveSyncAsHost()
+            end
+        end)
+    end
+    
+    -- Enable as client immediately to listen for host announcements
+    liveSyncEnabled = true
+    isLiveSyncHost = false
+    
+    if devMode then
+        print("DEV DEBUG: Enabled as client, waiting for host")
+    end
+    
+    self:UpdateLiveSyncButtonStatus()
 end
 
 function UI:StartLiveSyncAsHost()
@@ -3406,7 +3615,12 @@ function UI:StartLiveSyncAsHost()
     liveSyncParticipants = {}
     lastSyncTimestamp = time()
     
-    print("RaidSanctions: Live sync started as HOST. All penalty changes will be automatically shared.")
+    if devMode then
+        print("DEV DEBUG: StartLiveSyncAsHost called")
+        print("RaidSanctions: DEV MODE - Live sync started as HOST. All penalty changes will be automatically shared.")
+    else
+        print("RaidSanctions: Live sync started as HOST. All penalty changes will be automatically shared.")
+    end
     
     -- Update button status
     self:UpdateLiveSyncButtonStatus()
@@ -3423,12 +3637,35 @@ function UI:SendLiveSyncAnnouncement()
     local channel = IsInRaid() and "RAID" or "PARTY"
     local message = "LIVE_SYNC_START|HOST:" .. UnitName("player") .. "|T:" .. time()
     
-    C_ChatInfo.SendAddonMessage("RaidSanctions", message, channel)
+    if devMode then
+        print("DEV DEBUG: Sending live sync announcement - channel: " .. channel .. ", message: " .. message)
+    end
+    
+    local success = C_ChatInfo.SendAddonMessage("RaidSanctions", message, channel)
+    if devMode then
+        print("DEV DEBUG: SendAddonMessage result: " .. tostring(success))
+    end
+    
+    -- If not in group (dev mode), simulate successful sending
+    if devMode and not (IsInRaid() or IsInGroup()) then
+        print("DEV DEBUG: Simulating successful announcement in dev mode")
+    end
 end
 
 function UI:SendLiveSyncUpdate(actionType, data)
-    if not liveSyncEnabled or not self:IsPlayerAuthorized() then
+    if not liveSyncEnabled then
+        if devMode then
+            print("DEV DEBUG: SendLiveSyncUpdate called but liveSyncEnabled is false")
+        end
         return
+    end
+    
+    if not self:IsPlayerAuthorized() and not devMode then
+        if devMode then
+            print("DEV DEBUG: SendLiveSyncUpdate called but player not authorized (dev mode allows this)")
+        else
+            return
+        end
     end
     
     local channel = IsInRaid() and "RAID" or "PARTY"
@@ -3441,7 +3678,15 @@ function UI:SendLiveSyncUpdate(actionType, data)
     message = message .. "|REASON:" .. data.reason
     message = message .. "|AMOUNT:" .. data.amount
     
-    C_ChatInfo.SendAddonMessage("RaidSanctions", message, channel)
+    if devMode then
+        print("DEV DEBUG: Sending live sync update - " .. message)
+    end
+    
+    local success = C_ChatInfo.SendAddonMessage("RaidSanctions", message, channel)
+    if devMode then
+        print("DEV DEBUG: SendLiveSyncUpdate result: " .. tostring(success))
+    end
+    
     lastSyncTimestamp = timestamp
 end
 
@@ -3449,6 +3694,10 @@ function UI:HandleLiveSyncMessage(message, sender, distribution)
     -- Ignore own messages
     if sender == UnitName("player") then
         return
+    end
+    
+    if devMode then
+        print("DEV DEBUG: HandleLiveSyncMessage - sender: " .. sender .. ", message: " .. message:sub(1, 50) .. "...")
     end
     
     -- Parse message type
@@ -3465,14 +3714,29 @@ function UI:HandleLiveSyncStart(message, sender)
     local host = message:match("HOST:([^|]+)")
     local timestamp = tonumber(message:match("T:([^|]+)"))
     
+    if devMode then
+        print("DEV DEBUG: HandleLiveSyncStart - host: " .. tostring(host) .. ", sender: " .. sender)
+    end
+    
     if host and timestamp then
         liveSyncEnabled = true
         isLiveSyncHost = false
         
-        print("RaidSanctions: Live sync session joined - Host: " .. host)
+        if devMode then
+            print("DEV DEBUG: Live sync session joined - Host: " .. host)
+        else
+            print("RaidSanctions: Live sync session joined - Host: " .. host)
+        end
         
-        -- Update button status
-        self:UpdateLiveSyncButtonStatus()
+        -- Update button status to show connected
+        if mainFrame and mainFrame.liveSyncButton then
+            local button = mainFrame.liveSyncButton
+            button:SetText("Live Sync: ON")
+            button:GetFontString():SetTextColor(0.2, 1, 1) -- Cyan when connected as client
+            if devMode then
+                print("DEV DEBUG: Button forced to ON (cyan) after receiving host message")
+            end
+        end
         
         -- Send join confirmation
         self:SendLiveSyncJoinConfirmation()
@@ -3481,6 +3745,9 @@ end
 
 function UI:HandleLiveSyncUpdate(message, sender)
     if not liveSyncEnabled then
+        if devMode then
+            print("DEV DEBUG: HandleLiveSyncUpdate called but liveSyncEnabled is false")
+        end
         return
     end
     
@@ -3491,12 +3758,22 @@ function UI:HandleLiveSyncUpdate(message, sender)
     local reason = message:match("REASON:([^|]+)")
     local amount = tonumber(message:match("AMOUNT:([^|]+)"))
     
+    if devMode then
+        print("DEV DEBUG: HandleLiveSyncUpdate - actionType: " .. tostring(actionType) .. ", player: " .. tostring(playerName) .. ", reason: " .. tostring(reason))
+    end
+    
     if not actionType or not timestamp or not playerName or not reason or not amount then
+        if devMode then
+            print("DEV DEBUG: Invalid message format in HandleLiveSyncUpdate")
+        end
         return
     end
     
     -- Ignore old updates
     if timestamp <= lastSyncTimestamp then
+        if devMode then
+            print("DEV DEBUG: Ignoring old update (timestamp: " .. timestamp .. " <= " .. lastSyncTimestamp .. ")")
+        end
         return
     end
     
@@ -3535,7 +3812,14 @@ function UI:SendLiveSyncJoinConfirmation()
     local channel = IsInRaid() and "RAID" or "PARTY"
     local message = "LIVE_SYNC_JOIN|PARTICIPANT:" .. UnitName("player") .. "|T:" .. time()
     
-    C_ChatInfo.SendAddonMessage("RaidSanctions", message, channel)
+    if devMode then
+        print("DEV DEBUG: Sending join confirmation - " .. message)
+    end
+    
+    local success = C_ChatInfo.SendAddonMessage("RaidSanctions", message, channel)
+    if devMode then
+        print("DEV DEBUG: SendLiveSyncJoinConfirmation result: " .. tostring(success))
+    end
 end
 
 function UI:HandleLiveSyncJoin(message, sender)
@@ -3546,7 +3830,11 @@ function UI:HandleLiveSyncJoin(message, sender)
     local participant = message:match("PARTICIPANT:([^|]+)")
     if participant then
         liveSyncParticipants[participant] = time()
-        print("Live Sync: " .. participant .. " joined the session.")
+        if devMode then
+            print("DEV DEBUG: Live Sync: " .. participant .. " joined the session.")
+        else
+            print("Live Sync: " .. participant .. " joined the session.")
+        end
     end
 end
 
@@ -3558,7 +3846,11 @@ function UI:StopLiveSync()
     -- Update button status
     self:UpdateLiveSyncButtonStatus()
     
-    print("RaidSanctions: Live sync stopped.")
+    if devMode then
+        print("DEV DEBUG: RaidSanctions: Live sync stopped.")
+    else
+        print("RaidSanctions: Live sync stopped.")
+    end
 end
 
 function UI:IsLiveSyncActive()
@@ -3567,6 +3859,66 @@ end
 
 -- ========================================
 -- END LIVE SYNC SYSTEM
+-- ========================================
+
+-- ========================================
+-- DEV MODE TESTING FUNCTIONS
+-- ========================================
+
+function UI:TestLiveSync()
+    if not devMode then
+        print("Error: Testing functions only available in dev mode")
+        return
+    end
+    
+    print("=== DEV MODE: Live Sync Test ===")
+    print("Current state:")
+    print("  liveSyncEnabled: " .. tostring(liveSyncEnabled))
+    print("  isLiveSyncHost: " .. tostring(isLiveSyncHost))
+    print("  InRaid: " .. tostring(IsInRaid()))
+    print("  InGroup: " .. tostring(IsInGroup()))
+    print("  IsAuthorized: " .. tostring(self:IsPlayerAuthorized()))
+    
+    if liveSyncEnabled then
+        print("  Participants: " .. (#liveSyncParticipants > 0 and table.concat(liveSyncParticipants, ", ") or "none"))
+    end
+    
+    -- Test button status
+    self:UpdateLiveSyncButtonStatus()
+    print("Button status updated")
+    
+    print("=== End Test ===")
+end
+
+-- Command to enable/disable dev mode
+function UI:ToggleDevMode()
+    devMode = not devMode
+    print("DEV MODE: " .. (devMode and "ENABLED" or "DISABLED"))
+    
+    if devMode then
+        print("Development mode active - all restrictions bypassed")
+        print("Use /run RaidSanctions.UI:TestLiveSync() to test live sync")
+    else
+        print("Development mode disabled - normal restrictions apply")
+    end
+    
+    -- Update authorization status if main frame is visible
+    if mainFrame and mainFrame:IsShown() then
+        local isAuthorized = self:IsPlayerAuthorized()
+        self:UpdateAuthorizationStatus(isAuthorized)
+    end
+    
+    -- Update live sync button status
+    self:UpdateLiveSyncButtonStatus()
+    
+    -- Update options authorization if options window is open
+    if self.optionsFrame and self.optionsFrame:IsShown() then
+        self:RefreshOptionsAuthorization()
+    end
+end
+
+-- ========================================
+-- END DEV MODE TESTING FUNCTIONS
 -- ========================================
 
 -- Export
