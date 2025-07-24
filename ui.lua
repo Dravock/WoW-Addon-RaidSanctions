@@ -2347,26 +2347,28 @@ function UI:CreateSeasonStatsWindow()
     nameHeader:SetPoint("LEFT", 5, 0)
     nameHeader:SetText("Player")
     nameHeader:SetTextColor(0.8, 0.8, 0.8)
+    nameHeader:SetWidth(200) -- Match main window width
+    nameHeader:SetJustifyH("LEFT") -- Left aligned like main window
     
-    -- Create penalty headers dynamically
-    local xOffset = 150
+    -- Create penalty headers dynamically (match main window spacing)
+    local xOffset = 210 -- Match main window starting position
     for reason, amount in pairs(Logic:GetPenalties()) do
         local header = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         header:SetPoint("LEFT", xOffset, 0)
         header:SetText(reason)
         header:SetTextColor(0.8, 0.8, 0.8)
-        header:SetWidth(BUTTON_WIDTH)
-        header:SetJustifyH("CENTER")
-        xOffset = xOffset + (BUTTON_WIDTH + 15)
+        header:SetWidth(100) -- Match main window width
+        header:SetJustifyH("CENTER") -- Centered alignment like main window
+        xOffset = xOffset + 110 -- Match main window spacing
     end
     
-    -- Total header
+    -- Total header (positioned to match main window)
     local totalHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    totalHeader:SetPoint("RIGHT", -10, 0)
+    totalHeader:SetPoint("LEFT", xOffset + 20, 0) -- Match main window position
     totalHeader:SetText("Total")
     totalHeader:SetTextColor(0.8, 0.8, 0.8)
-    totalHeader:SetWidth(120)
-    totalHeader:SetJustifyH("CENTER")
+    totalHeader:SetWidth(120) -- Match main window width
+    totalHeader:SetJustifyH("CENTER") -- Centered alignment like main window
     
     -- Scroll container for player list (takes up most of the frame)
     local scrollFrame = CreateFrame("ScrollFrame", nil, seasonStatsFrame, "UIPanelScrollFrameTemplate")
