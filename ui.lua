@@ -1513,17 +1513,17 @@ function UI:SendMessagesWithDelay(messageQueue, channel, sessionTimestamp)
             end
             return
         end
-        
+
         local msgData = messageQueue[index]
         local success = C_ChatInfo.SendAddonMessage("RaidSanctions", msgData.message, channel)
-        
-        if success and success ~= 0 then
-            sentCount = sentCount + 1
-        else
+
+        if success == false then
             failedCount = failedCount + 1
-            print("ERROR: Failed to send message " .. index .. " (" .. msgData.type .. ")")
+            print("ERROR: Failed to send message " .. index .. " (" .. (msgData.type or "?") .. ")")
+        else
+            sentCount = sentCount + 1
         end
-        
+
         -- Schedule next message with 300ms delay
         if index < totalMessages then
             C_Timer.After(0.3, function()
@@ -1531,7 +1531,7 @@ function UI:SendMessagesWithDelay(messageQueue, channel, sessionTimestamp)
             end)
         end
     end
-    
+
     -- Start sending
     sendNextMessage(1)
 end
