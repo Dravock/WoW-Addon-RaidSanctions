@@ -19,7 +19,7 @@ local FRAME_HEIGHT = 700  -- More height for bottom button bar
 local ROW_HEIGHT = 30
 local BUTTON_WIDTH = 80
 local BUTTON_HEIGHT = 25
-local BOTTOM_PANEL_HEIGHT = 140  -- Increased from 110 to 140 for additional penalty button row
+local BOTTOM_PANEL_HEIGHT = 160  -- Increased from 140 to 160 for more space for management buttons
 
 -- Local UI variables
 local mainFrame = nil
@@ -277,12 +277,12 @@ function UI:CreateBottomPanel()
     
     -- "Management:" label for third row (after 2 penalty button rows)
     local managementLabel = bottomPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    managementLabel:SetPoint("TOPLEFT", 10, -95) -- Moved down from -60 to -95
+    managementLabel:SetPoint("TOPLEFT", 10, -105) -- Moved down from -95 to -105 to make room for auth status
     managementLabel:SetText("Management:")
     managementLabel:SetTextColor(1, 0.8, 0)
     
-    -- THIRD ROW: Management Buttons (moved down)
-    local managementYOffset = -115 -- Moved down from -80 to -115
+    -- THIRD ROW: Management Buttons (moved down to make room for auth status)
+    local managementYOffset = -125 -- Moved down from -115 to -125
     
     -- "Paid" Button
     local paidButton = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
@@ -372,6 +372,12 @@ function UI:CreateBottomPanel()
     syncButton:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
+    
+    -- Authorization status display (top right of bottom panel)
+    local authStatusLabel = bottomPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    authStatusLabel:SetPoint("TOPRIGHT", -10, -8)
+    authStatusLabel:SetText("") -- Will be set by UpdateAuthorizationStatus
+    mainFrame.authStatusLabel = authStatusLabel -- Store reference for updates
     
     mainFrame.bottomPanel = bottomPanel
 end
@@ -2261,8 +2267,8 @@ end
 function UI:CreateSeasonStatsWindow()
     -- Create season stats frame
     local seasonStatsFrame = CreateFrame("Frame", "RaidSanctionsSeasonStatsFrame", mainFrame, "BackdropTemplate")
-    seasonStatsFrame:SetSize(FRAME_WIDTH, FRAME_HEIGHT - 200) -- Kleiner, da keine Tools
-    seasonStatsFrame:SetPoint("CENTER", mainFrame, "CENTER") -- Centered in main window
+    seasonStatsFrame:SetSize(FRAME_WIDTH - 20, FRAME_HEIGHT - BOTTOM_PANEL_HEIGHT - 80) -- Leave more space for title and bottom panel
+    seasonStatsFrame:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 10, -40) -- Start below title, inside main frame
     seasonStatsFrame:SetFrameStrata("HIGH")
     seasonStatsFrame:SetFrameLevel(200) -- Above main window
     
