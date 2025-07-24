@@ -3668,6 +3668,18 @@ function UI:SendLiveSyncUpdate(actionType, data)
         end
     end
     
+    -- Validate required data fields
+    if not data or not data.player or not data.reason or not data.amount then
+        if devMode then
+            print("DEV DEBUG: SendLiveSyncUpdate called with invalid data:")
+            print("  actionType: " .. tostring(actionType))
+            print("  data.player: " .. tostring(data and data.player or "nil"))
+            print("  data.reason: " .. tostring(data and data.reason or "nil"))
+            print("  data.amount: " .. tostring(data and data.amount or "nil"))
+        end
+        return
+    end
+    
     local channel = IsInRaid() and "RAID" or "PARTY"
     local sender = UnitName("player")
     local timestamp = time()
