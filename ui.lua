@@ -373,6 +373,32 @@ function UI:CreateBottomPanel()
         GameTooltip:Hide()
     end)
     
+    -- "Send Penalty Mails" Button (Guild Master only)
+    local sendMailsButton = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
+    sendMailsButton:SetSize(130, BUTTON_HEIGHT)
+    sendMailsButton:SetPoint("TOPLEFT", 570, managementYOffset) -- Next to Sync Session button
+    sendMailsButton:SetText("Send Penalty Mails")
+    sendMailsButton:GetFontString():SetTextColor(1, 0.8, 0.2) -- Gold color for GM exclusive
+    
+    sendMailsButton:SetScript("OnClick", function()
+        UI:SendPenaltyMails()
+    end)
+    
+    sendMailsButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Send Penalty Mails to Guild Members")
+        GameTooltip:AddLine("Sends mails with penalty details and payment request to guild members.", 1, 1, 1)
+        GameTooltip:AddLine("Uses Season Statistics data for penalty amounts.", 0.8, 0.8, 0.8)
+        GameTooltip:AddLine("Requires Guild Master permissions.", 1, 0.8, 0.2)
+        GameTooltip:Show()
+    end)
+    sendMailsButton:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    
+    -- Store reference for authorization updates
+    mainFrame.sendMailsButton = sendMailsButton
+    
     -- Authorization status display (top right of bottom panel)
     local authStatusLabel = bottomPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     authStatusLabel:SetPoint("TOPRIGHT", -10, -8)
@@ -475,6 +501,9 @@ function UI:RefreshPlayerList()
     -- Check authorization and update UI accordingly
     local isAuthorized = self:IsPlayerAuthorized()
     self:UpdateAuthorizationStatus(isAuthorized)
+    
+    -- Update Send Mails button status
+    self:UpdateSendMailsButtonStatus()
     
     -- Separate players by guild membership
     local guildMembers = {}
@@ -625,6 +654,27 @@ function UI:UpdateAuthorizationStatus(isAuthorized)
     
     -- Update toolbar buttons based on authorization
     self:SetToolbarButtonsEnabled(isAuthorized)
+    
+    -- Update Send Penalty Mails button based on Guild Master status
+    self:UpdateSendMailsButtonStatus()
+end
+
+function UI:UpdateSendMailsButtonStatus()
+    if not mainFrame or not mainFrame.sendMailsButton then
+        return
+    end
+    
+    local isGuildMaster = self:IsGuildMaster()
+    local button = mainFrame.sendMailsButton
+    
+    button:SetEnabled(isGuildMaster)
+    if isGuildMaster then
+        button:SetAlpha(1.0)
+        button:GetFontString():SetTextColor(1, 0.8, 0.2) -- Gold color when enabled
+    else
+        button:SetAlpha(0.5)
+        button:GetFontString():SetTextColor(0.5, 0.5, 0.5) -- Gray when disabled
+    end
 end
 
 function UI:IsPlayerAuthorized()
@@ -658,6 +708,11 @@ function UI:IsPlayerAuthorized()
         -- Not in group: allow (for testing/solo use)
         return true
     end
+end
+
+function UI:IsGuildMaster()
+    -- Check if player is Guild Master (for mail sending privileges)
+    return IsGuildLeader()
 end
 
 function UI:CreateSectionHeader(title, yOffset)
@@ -2944,6 +2999,138 @@ function UI:PostPenaltyConfigToRaid()
     print("Penalty configuration posted to " .. (IsInRaid() and "raid" or "party") .. " chat.")
 end
 
+function UI:SendPenaltyMails()
+    -- Check Guild Master authorization first
+    if not self:IsGuildMaster() then
+        print("Error: You must be Guild Master to send penalty mails.")
+        return
+    end
+    
+    -- Get season data (source of penalty information)
+    local seasonData = RaidSanctions.Logic:GetSeasonData()
+    if not seasonData or not seasonData.players then
+        print("Error: No season data found. Season statistics are required to send penalty mails.")
+        return
+    end
+    
+    -- Get guild members with penalties > 0 from season data
+    local guildPlayersWithPenalties = {}
+    for playerName, playerData in pairs(seasonData.players) do
+        -- Check if player is guild member and has penalties
+        if RaidSanctions.Logic:IsPlayerInGuild(playerName) and 
+           playerData.totalAmount and playerData.totalAmount > 0 then
+            table.insert(guildPlayersWithPenalties, {
+                name = playerName,
+                data = playerData
+            })
+        end
+    end
+    
+    -- Check if any guild members have penalties
+    if #guildPlayersWithPenalties == 0 then
+        print("No guild members with penalties found in season data.")
+        return
+    end
+    
+    -- Show confirmation dialog
+    local confirmText = "Send penalty mails to " .. #guildPlayersWithPenalties .. " guild members?"
+    StaticPopup_Show("RAIDSANCTIONS_SEND_MAILS_CONFIRM", confirmText, nil, guildPlayersWithPenalties)
+end
+
+function UI:ExecuteSendPenaltyMails(guildPlayersWithPenalties)
+    -- Check if we have the required item for COD (Linen Cloth as default)
+    local itemID = 2589 -- Linen Cloth item ID
+    local itemCount = GetItemCount(itemID)
+    
+    if itemCount < #guildPlayersWithPenalties then
+        print("Error: You need at least " .. #guildPlayersWithPenalties .. " [Linen Cloth] in your bags to send penalty mails.")
+        print("Current count: " .. itemCount .. "/" .. #guildPlayersWithPenalties)
+        return
+    end
+    
+    local successCount = 0
+    local failCount = 0
+    local totalPenaltyAmount = 0
+    
+    -- Send mails to each guild member
+    for _, playerInfo in ipairs(guildPlayersWithPenalties) do
+        local playerName = playerInfo.name
+        local playerData = playerInfo.data
+        local penaltyAmount = playerData.totalAmount or 0
+        
+        -- Convert penalty amount from copper to gold for display
+        local goldAmount = math.floor(penaltyAmount / 10000)
+        local silverAmount = math.floor((penaltyAmount % 10000) / 100)
+        local copperAmount = penaltyAmount % 100
+        
+        -- Create detailed penalty breakdown
+        local penaltyDetails = {}
+        if playerData.penalties then
+            local penaltyCounts = {}
+            -- Count penalties by type
+            for _, penalty in ipairs(playerData.penalties) do
+                penaltyCounts[penalty.reason] = (penaltyCounts[penalty.reason] or 0) + 1
+            end
+            
+            -- Create breakdown text
+            for reason, count in pairs(penaltyCounts) do
+                table.insert(penaltyDetails, count .. "x " .. reason)
+            end
+        end
+        
+        -- Create mail subject and body
+        local subject = "RaidSanctions - Penalty Payment Required"
+        local body = "Dear " .. playerName .. ",\n\n"
+        body = body .. "You have outstanding penalties from raid activities:\n\n"
+        
+        if #penaltyDetails > 0 then
+            body = body .. "Penalties:\n" .. table.concat(penaltyDetails, "\n") .. "\n\n"
+        end
+        
+        body = body .. "Total Amount: " .. goldAmount .. "g " .. silverAmount .. "s " .. copperAmount .. "c\n\n"
+        body = body .. "Please accept this mail and pay the penalty amount to settle your debts.\n\n"
+        body = body .. "Thank you for your cooperation!\n"
+        body = body .. "- Raid Management"
+        
+        -- Send mail with COD (Cash on Delivery)
+        -- Note: We send 1 Linen Cloth as the item requirement for COD
+        local success = pcall(function()
+            SendMail(playerName, subject, body, nil, penaltyAmount, itemID, 1)
+        end)
+        
+        if success then
+            successCount = successCount + 1
+            totalPenaltyAmount = totalPenaltyAmount + penaltyAmount
+            print("✓ Mail sent to " .. playerName .. " (" .. RaidSanctions.Logic:FormatGold(penaltyAmount) .. ")")
+        else
+            failCount = failCount + 1
+            print("✗ Failed to send mail to " .. playerName)
+        end
+        
+        -- Small delay between sends to avoid spam protection
+        if successCount < #guildPlayersWithPenalties then
+            -- Use C_Timer for delay between mails
+            C_Timer.After(0.5, function() end) -- 500ms delay
+        end
+    end
+    
+    -- Summary message
+    local summary = "Penalty mail sending completed!"
+    summary = summary .. "\n✓ Successfully sent: " .. successCount .. " mails"
+    if failCount > 0 then
+        summary = summary .. "\n✗ Failed: " .. failCount .. " mails"
+    end
+    summary = summary .. "\nTotal penalty amount: " .. RaidSanctions.Logic:FormatGold(totalPenaltyAmount)
+    summary = summary .. "\nItems used: " .. successCount .. " [Linen Cloth]"
+    
+    print(summary)
+    
+    -- Optional: Post summary to guild chat
+    if IsInGuild() then
+        SendChatMessage("RaidSanctions: Penalty mails sent to " .. successCount .. " guild members. Total: " .. RaidSanctions.Logic:FormatGold(totalPenaltyAmount), "GUILD")
+    end
+end
+
 -- Static popup for reset confirmation
 StaticPopupDialogs["RAIDSANCTIONS_RESET_CONFIRM"] = {
     text = "Reset all sanction data for the current session?",
@@ -3060,6 +3247,23 @@ StaticPopupDialogs["RAIDSANCTIONS_SYNC_CONFIRM"] = {
             UI:ApplySyncData(syncData)
         else
             print("ERROR: No sync data available in StaticPopup")
+        end
+    end,
+    timeout = 30,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["RAIDSANCTIONS_SEND_MAILS_CONFIRM"] = {
+    text = "Send penalty mails to guild members?\n\n%s",
+    button1 = "Send Mails",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if data and type(data) == "table" then
+            UI:ExecuteSendPenaltyMails(data)
+        else
+            print("ERROR: No player data available for mail sending")
         end
     end,
     timeout = 30,
