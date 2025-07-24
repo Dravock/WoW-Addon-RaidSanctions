@@ -815,7 +815,10 @@ function UI:IsPlayerAuthorized()
 end
 
 function UI:IsGuildMaster()
-    -- Check if player is Guild Master (for mail sending privileges)
+    -- Check if player is Guild Master (für Mail-Versand). Im DevMode immer true.
+    if devMode then
+        return true
+    end
     return IsGuildLeader()
 end
 
