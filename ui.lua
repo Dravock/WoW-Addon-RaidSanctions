@@ -195,6 +195,13 @@ function UI:CreateBottomPanel()
     actionsLabel:SetText("Penalties:")
     actionsLabel:SetTextColor(1, 0.8, 0)
     
+    -- Selected Player info (next to Penalties label)
+    local selectedPlayerLabel = bottomPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    selectedPlayerLabel:SetPoint("LEFT", actionsLabel, "RIGHT", 10, 0)
+    selectedPlayerLabel:SetText("")
+    selectedPlayerLabel:SetTextColor(0.8, 0.8, 0.8)
+    mainFrame.selectedPlayerLabel = selectedPlayerLabel -- Store reference for updates
+    
     -- ERSTE REIHE: Penalty-Buttons
     local xOffset = 10
     local yOffset = -30
@@ -333,56 +340,44 @@ function UI:SetupEventHandlers()
     -- Note: No keyboard capture for main frame to allow normal gameplay
     -- ESC key handling is removed to allow normal ESC functionality in WoW
     
-    print("DEBUG: SetupEventHandlers() called")
-    
     -- Clear any existing event handlers first
     if self.syncEventFrame then
         self.syncEventFrame:UnregisterAllEvents()
         self.syncEventFrame:SetScript("OnEvent", nil)
         self.syncEventFrame = nil
-        print("DEBUG: Cleared existing event handler")
     end
     
     -- Register for addon communication (max 16 characters)
-    local registerResult = C_ChatInfo.RegisterAddonMessagePrefix("RaidSanctions")
-    print("DEBUG: RegisterAddonMessagePrefix result: " .. tostring(registerResult))
+    C_ChatInfo.RegisterAddonMessagePrefix("RaidSanctions")
     
-    -- Set up NEW addon message handler
+    -- Set up addon message handler
     self.syncEventFrame = CreateFrame("Frame", "RaidSanctionsSyncFrame")
     self.syncEventFrame:RegisterEvent("CHAT_MSG_ADDON")
-    print("DEBUG: New event frame created and CHAT_MSG_ADDON registered")
     
     self.syncEventFrame:SetScript("OnEvent", function(self, event, prefix, message, distribution, sender)
-        print("DEBUG: NEW HANDLER - Event: " .. tostring(event) .. ", Prefix: " .. tostring(prefix) .. ", Sender: " .. tostring(sender))
-        
         -- Ignore our own messages completely
         local playerName = UnitName("player")
         -- Also handle realm names (e.g., "Drodar-Eredar" vs "Drodar")
         local senderName = sender:match("([^-]+)") or sender
         local currentName = playerName:match("([^-]+)") or playerName
         
-        print("DEBUG: Comparing sender '" .. senderName .. "' with current player '" .. currentName .. "'")
-        
         if senderName == currentName then
-            print("DEBUG: Ignoring message from self (" .. senderName .. " == " .. currentName .. ")")
             return
         end
         
         if event == "CHAT_MSG_ADDON" and prefix == "RaidSanctions" then
-            print("DEBUG: RaidSanctions message received from " .. sender .. ", calling HandleSyncMessage")
             UI:HandleMultiSyncMessage(message, sender, distribution)
-        else
-            print("DEBUG: Ignoring event/prefix: " .. tostring(event) .. "/" .. tostring(prefix))
         end
     end)
-    
-    print("DEBUG: NEW event handler setup complete")
 end
 
 function UI:RefreshPlayerList()
     if not mainFrame then
         return
     end
+    
+    -- Clear player selection when refreshing
+    self:ClearAllPlayerSelections()
     
     -- Remove old rows
     for _, row in ipairs(playerRows) do
@@ -398,7 +393,6 @@ function UI:RefreshPlayerList()
     
     -- Check authorization and update UI accordingly
     local isAuthorized = self:IsPlayerAuthorized()
-    print("DEBUG: RefreshPlayerList - isAuthorized: " .. tostring(isAuthorized))
     self:UpdateAuthorizationStatus(isAuthorized)
     
     -- Separate players by guild membership
@@ -530,16 +524,12 @@ function UI:RefreshSeasonPlayerList()
 end
 
 function UI:UpdateAuthorizationStatus(isAuthorized)
-    print("DEBUG: UpdateAuthorizationStatus() called with isAuthorized: " .. tostring(isAuthorized))
-    
     if not mainFrame or not mainFrame.bottomPanel then
-        print("DEBUG: No mainFrame or bottomPanel available")
         return
     end
     
     -- Create or update authorization status label
     if not mainFrame.authStatusLabel then
-        print("DEBUG: Creating auth status label")
         mainFrame.authStatusLabel = mainFrame.bottomPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         mainFrame.authStatusLabel:SetPoint("TOPRIGHT", -10, -8)
     end
@@ -547,58 +537,44 @@ function UI:UpdateAuthorizationStatus(isAuthorized)
     if isAuthorized then
         mainFrame.authStatusLabel:SetText("✓ Authorized (Leader/Assistant)")
         mainFrame.authStatusLabel:SetTextColor(0.2, 1, 0.2) -- Green
-        print("DEBUG: Set authorized status (green)")
     else
         mainFrame.authStatusLabel:SetText("✗ Not Authorized (Need Leader/Assistant)")
         mainFrame.authStatusLabel:SetTextColor(1, 0.2, 0.2) -- Red
-        print("DEBUG: Set not authorized status (red)")
     end
     
     -- Update toolbar buttons based on authorization
-    print("DEBUG: Calling SetToolbarButtonsEnabled with: " .. tostring(isAuthorized))
     self:SetToolbarButtonsEnabled(isAuthorized)
 end
 
 function UI:IsPlayerAuthorized()
-    print("DEBUG: IsPlayerAuthorized() called")
-    
     -- Check if player has permission to use penalty actions
     -- Player must be raid leader or raid assistant
     
     local inRaid = IsInRaid()
     local inGroup = IsInGroup()
-    print("DEBUG: IsInRaid(): " .. tostring(inRaid) .. ", IsInGroup(): " .. tostring(inGroup))
     
     if inRaid then
         -- In raid: check if player is leader or assistant
         local playerName = UnitName("player")
         local numRaidMembers = GetNumGroupMembers()
-        print("DEBUG: Player name: " .. tostring(playerName) .. ", Raid members: " .. tostring(numRaidMembers))
         
         for i = 1, numRaidMembers do
             local name, rank = GetRaidRosterInfo(i)
             if name then
                 -- Remove realm name if present
                 local raidMemberName = name:match("([^-]+)")
-                print("DEBUG: Checking raid member " .. i .. ": " .. tostring(raidMemberName) .. " (rank: " .. tostring(rank) .. ")")
                 if raidMemberName == playerName then
                     -- Rank 2 = Leader, Rank 1 = Assistant, Rank 0 = Normal member
-                    local authorized = rank >= 1
-                    print("DEBUG: Found player in raid, rank: " .. tostring(rank) .. ", authorized: " .. tostring(authorized))
-                    return authorized
+                    return rank >= 1
                 end
             end
         end
-        print("DEBUG: Player not found in raid roster")
         return false
     elseif inGroup then
         -- In party: check if player is party leader
-        local isLeader = UnitIsGroupLeader("player")
-        print("DEBUG: In party, is leader: " .. tostring(isLeader))
-        return isLeader
+        return UnitIsGroupLeader("player")
     else
         -- Not in group: allow (for testing/solo use)
-        print("DEBUG: Not in group, allowing for solo testing")
         return true
     end
 end
@@ -636,10 +612,10 @@ function UI:CreatePlayerRow(playerName, playerData, yOffset)
         bg:SetColorTexture(0.1, 0.1, 0.1, 0.2)
     end
     
-    -- Selection background
-    local selectedBg = row:CreateTexture(nil, "HIGHLIGHT")
-    selectedBg:SetAllPoints()
-    selectedBg:SetColorTexture(0.3, 0.6, 1, 0.3)
+    -- Hover highlight (built-in WoW system)
+    local hoverBg = row:CreateTexture(nil, "HIGHLIGHT")
+    hoverBg:SetAllPoints()
+    hoverBg:SetColorTexture(0.3, 0.6, 1, 0.2) -- Light blue hover
     
     -- Click handler for player selection
     row:SetScript("OnClick", function()
@@ -844,16 +820,72 @@ function UI:AddPlayerManually(playerName)
 end
 
 function UI:SelectPlayer(playerName)
-    selectedPlayer = playerName
-    print("Player selected: " .. playerName)
+    -- Deselect previously selected player first
+    if selectedPlayer and selectedPlayer ~= playerName then
+        self:DeselectPlayer(selectedPlayer)
+    end
     
-    -- Visual update of selection
+    -- Prevent double-selection of the same player
+    if selectedPlayer == playerName then
+        return
+    end
+    
+    selectedPlayer = playerName
+    
+    -- Update selected player label
+    if mainFrame and mainFrame.selectedPlayerLabel then
+        mainFrame.selectedPlayerLabel:SetText("Selected for " .. playerName)
+        mainFrame.selectedPlayerLabel:SetTextColor(0.2, 1, 0.2) -- Green when selected
+    end
+    
+    -- Visual update of selection - find and highlight the selected row
     for _, row in ipairs(playerRows) do
         if row.playerName == playerName then
-            -- Highlight selected row
-            local bg = row:CreateTexture(nil, "BACKGROUND")
-            bg:SetAllPoints()
-            bg:SetColorTexture(0.2, 0.5, 1, 0.4)
+            -- Clear any existing selection background
+            if row.selectionBg then
+                row.selectionBg:Hide()
+                row.selectionBg:SetParent(nil)
+                row.selectionBg = nil
+            end
+            
+            -- Create new selection background
+            row.selectionBg = row:CreateTexture(nil, "BACKGROUND", nil, 1) -- Higher sublevel
+            row.selectionBg:SetAllPoints()
+            row.selectionBg:SetColorTexture(0.2, 0.5, 1, 0.4) -- Blue selection
+            break
+        end
+    end
+end
+
+function UI:DeselectPlayer(playerName)
+    -- Remove visual selection from a specific player
+    for _, row in ipairs(playerRows) do
+        if row.playerName == playerName then
+            if row.selectionBg then
+                row.selectionBg:Hide()
+                row.selectionBg:SetParent(nil)
+                row.selectionBg = nil
+            end
+            break
+        end
+    end
+end
+
+function UI:ClearAllPlayerSelections()
+    -- Clear all player selections (useful when refreshing the list)
+    selectedPlayer = nil
+    
+    -- Update selected player label
+    if mainFrame and mainFrame.selectedPlayerLabel then
+        mainFrame.selectedPlayerLabel:SetText("")
+        mainFrame.selectedPlayerLabel:SetTextColor(0.8, 0.8, 0.8) -- Gray when none selected
+    end
+    
+    for _, row in ipairs(playerRows) do
+        if row.selectionBg then
+            row.selectionBg:Hide()
+            row.selectionBg:SetParent(nil)
+            row.selectionBg = nil
         end
     end
 end
@@ -870,9 +902,12 @@ function UI:ApplyPenaltyToSelectedPlayer(reason, amount)
     end
     
     if RaidSanctions.Logic:ApplyPenalty(selectedPlayer, reason, amount) then
+        print("Applied penalty '" .. reason .. "' to " .. selectedPlayer)
         self:RefreshPlayerList()
+        -- Reselect the player after refresh to maintain selection
+        self:SelectPlayer(selectedPlayer)
     else
-        print("Error applying penalty.")
+        print("Error applying penalty to " .. selectedPlayer .. ".")
     end
 end
 
@@ -978,20 +1013,15 @@ function UI:PostStatsToRaidChat()
 end
 
 function UI:SyncSessionData()
-    print("DEBUG: SyncSessionData() called")
-    
     -- Check authorization first (button should be disabled, but double-check)
     local isAuthorized = self:IsPlayerAuthorized()
-    print("DEBUG: Authorization check result: " .. tostring(isAuthorized))
     if not isAuthorized then
-        print("DEBUG: Not authorized, exiting sync")
         return
     end
     
     -- Check if we're in a raid or group
     local inRaid = IsInRaid()
     local inGroup = IsInGroup()
-    print("DEBUG: In raid: " .. tostring(inRaid) .. ", In group: " .. tostring(inGroup))
     if not inRaid and not inGroup then
         print("You must be in a raid or group to sync data.")
         return
@@ -1001,33 +1031,16 @@ function UI:SyncSessionData()
     local penalties = RaidSanctions.Logic:GetPenalties()
     local seasonData = RaidSanctions.Logic:GetSeasonData()
     
-    print("DEBUG: Session data exists: " .. tostring(session ~= nil))
-    if session then
-        print("DEBUG: Session has players: " .. tostring(session.players ~= nil))
-        if session.players then
-            local playerCount = 0
-            for _ in pairs(session.players) do
-                playerCount = playerCount + 1
-            end
-            print("DEBUG: Number of players in session: " .. playerCount)
-        end
-    end
-    
-    print("DEBUG: Penalties data exists: " .. tostring(penalties ~= nil))
-    print("DEBUG: Season data exists: " .. tostring(seasonData ~= nil))
-    
     if not session or not session.players then
         print("No session data to sync.")
         return
     end
     
-    -- NEW APPROACH: Send multiple individual messages
+    -- Send multi-message sync
     self:SendMultiMessageSync(session, penalties, seasonData)
 end
 
 function UI:SendMultiMessageSync(session, penalties, seasonData)
-    print("DEBUG: SendMultiMessageSync() called - preparing COMPRESSED message sending")
-    
     local sender = UnitName("player")
     local timestamp = time()
     local channel = IsInRaid() and "RAID" or "PARTY"
@@ -1036,8 +1049,6 @@ function UI:SendMultiMessageSync(session, penalties, seasonData)
     for _ in pairs(session.players) do
         totalPlayers = totalPlayers + 1
     end
-    
-    print("DEBUG: Will send " .. totalPlayers .. " players in COMPRESSED batches + 3 config messages")
     
     -- Create message queue
     local messageQueue = {}
@@ -1061,12 +1072,10 @@ function UI:SendMultiMessageSync(session, penalties, seasonData)
     for playerName, playerData in pairs(session.players) do
         -- Create ultra-compact player data: name:total:class:penalties
         local playerCompact = playerName .. ":" .. (playerData.total or 0) .. ":" .. (playerData.class or "UNKNOWN")
-        print("DEBUG: Processing player " .. playerName .. " with " .. (playerData.penalties and #playerData.penalties or 0) .. " penalties, total: " .. (playerData.total or 0))
         
         -- Add compressed penalties if present
         if playerData.penalties and #playerData.penalties > 0 then
             playerCompact = playerCompact .. ":"
-            local penaltyDebug = {}
             for _, penalty in ipairs(playerData.penalties) do
                 -- Smart-compress: use unique identifiers for each penalty type
                 local reasonShort = ""
@@ -1081,15 +1090,9 @@ function UI:SendMultiMessageSync(session, penalties, seasonData)
                 
                 local compressedPenalty = reasonShort .. penalty.amount
                 playerCompact = playerCompact .. compressedPenalty .. ","
-                table.insert(penaltyDebug, penalty.reason .. "=" .. penalty.amount .. " -> " .. compressedPenalty)
             end
             playerCompact = playerCompact:sub(1, -2) -- Remove trailing comma
-            print("DEBUG: Compressed penalties for " .. playerName .. ": " .. table.concat(penaltyDebug, ", "))
-        else
-            print("DEBUG: No penalties for " .. playerName)
         end
-        
-        print("DEBUG: Final compressed data for " .. playerName .. ": " .. playerCompact)
         
         -- Check if adding this player would exceed message size
         local testMessage = "BATCH|V:2.0|S:" .. sender .. "|T:" .. timestamp .. "|IDX:" .. batchIndex .. "|" .. table.concat(currentBatch, ";") .. ";" .. playerCompact
@@ -1098,7 +1101,6 @@ function UI:SendMultiMessageSync(session, penalties, seasonData)
             -- Send current batch
             local batchMessage = "BATCH|V:2.0|S:" .. sender .. "|T:" .. timestamp .. "|IDX:" .. batchIndex .. "|" .. table.concat(currentBatch, ";")
             table.insert(messageQueue, {type = "BATCH", message = batchMessage, batchIndex = batchIndex, playerCount = #currentBatch})
-            print("DEBUG: Created batch " .. batchIndex .. " with " .. #currentBatch .. " players (" .. string.len(batchMessage) .. " chars)")
             
             -- Start new batch
             currentBatch = {playerCompact}
@@ -1113,24 +1115,18 @@ function UI:SendMultiMessageSync(session, penalties, seasonData)
     if #currentBatch > 0 then
         local batchMessage = "BATCH|V:2.0|S:" .. sender .. "|T:" .. timestamp .. "|IDX:" .. batchIndex .. "|" .. table.concat(currentBatch, ";")
         table.insert(messageQueue, {type = "BATCH", message = batchMessage, batchIndex = batchIndex, playerCount = #currentBatch})
-        print("DEBUG: Created final batch " .. batchIndex .. " with " .. #currentBatch .. " players (" .. string.len(batchMessage) .. " chars)")
     end
     
     -- 4. Session end marker
     local sessionEndMsg = "CFG:SESSION_END|V:2.0|S:" .. sender .. "|T:" .. timestamp .. "|SENT:" .. totalPlayers .. "|BATCHES:" .. batchIndex
     table.insert(messageQueue, {type = "CFG:SESSION_END", message = sessionEndMsg})
     
-    print("DEBUG: Message queue prepared with " .. #messageQueue .. " messages (1 config + 1 start + " .. batchIndex .. " batches + 1 end). Starting delayed sending...")
-    
     -- Send messages with delays using our delayed sending function
     self:SendMessagesWithDelay(messageQueue, channel, timestamp)
 end
 
 function UI:SendMessagesWithDelay(messageQueue, channel, sessionTimestamp)
-    print("DEBUG: SendMessagesWithDelay() called with " .. #messageQueue .. " messages")
-    
     if not messageQueue or #messageQueue == 0 then
-        print("DEBUG: No messages to send")
         return
     end
     
@@ -1142,7 +1138,6 @@ function UI:SendMessagesWithDelay(messageQueue, channel, sessionTimestamp)
     -- Send first message immediately
     local function sendNextMessage(index)
         if index > totalMessages then
-            print("DEBUG: All " .. totalMessages .. " messages processed. Sent: " .. sentCount .. ", Failed: " .. failedCount)
             if sentCount == totalMessages then
                 print("Multi-message sync completed successfully! Sent " .. sentCount .. " messages.")
             else
@@ -1154,14 +1149,6 @@ function UI:SendMessagesWithDelay(messageQueue, channel, sessionTimestamp)
         local msgData = messageQueue[index]
         local success = C_ChatInfo.SendAddonMessage("RaidSanctions", msgData.message, channel)
         
-        if msgData.type == "PLAYER" then
-            print("DEBUG: [" .. msgData.index .. "/" .. (totalMessages - 3) .. "] Sent player " .. msgData.playerName .. " (" .. string.len(msgData.message) .. " chars) - Result: " .. tostring(success))
-        elseif msgData.type == "BATCH" then
-            print("DEBUG: [Batch " .. msgData.batchIndex .. "] Sent " .. msgData.playerCount .. " players (" .. string.len(msgData.message) .. " chars) - Result: " .. tostring(success))
-        else
-            print("DEBUG: Sent " .. msgData.type .. " (" .. string.len(msgData.message) .. " chars) - Result: " .. tostring(success))
-        end
-        
         if success and success ~= 0 then
             sentCount = sentCount + 1
         else
@@ -1169,50 +1156,39 @@ function UI:SendMessagesWithDelay(messageQueue, channel, sessionTimestamp)
             print("ERROR: Failed to send message " .. index .. " (" .. msgData.type .. ")")
         end
         
-        -- Schedule next message with 300ms delay (increased from 200ms for better reliability)
+        -- Schedule next message with 300ms delay
         if index < totalMessages then
             C_Timer.After(0.3, function()
                 sendNextMessage(index + 1)
             end)
-        else
-            -- Final message sent, complete
-            print("DEBUG: Final message sent, sync session " .. sessionTimestamp .. " complete")
         end
     end
     
     -- Start sending
-    print("DEBUG: Starting delayed message sending with 300ms intervals")
     sendNextMessage(1)
 end
 
 function UI:SerializeSyncData(data)
-    print("DEBUG: SerializeSyncData() called")
     
     -- Enhanced serialization for comprehensive sync data
     local success, result = pcall(function()
-        print("DEBUG: Starting serialization...")
         local serialized = ""
         serialized = serialized .. "VERSION:" .. data.version .. "|"
         serialized = serialized .. "TIMESTAMP:" .. data.timestamp .. "|"
         serialized = serialized .. "SENDER:" .. data.sender .. "|"
         
-        print("DEBUG: Basic info serialized")
         
         -- Serialize penalty configuration
         if data.penaltyConfig then
-            print("DEBUG: Serializing penalty config...")
             serialized = serialized .. "PENALTIES:"
             for reason, amount in pairs(data.penaltyConfig) do
                 serialized = serialized .. reason .. "=" .. amount .. ";"
             end
             serialized = serialized .. "|"
-            print("DEBUG: Penalty config serialized")
         else
-            print("DEBUG: No penalty config to serialize")
         end
         
         -- Serialize session data
-        print("DEBUG: Serializing session data...")
         serialized = serialized .. "SESSION:"
         local playerCount = 0
         local totalPlayersToSync = 0
@@ -1221,11 +1197,9 @@ function UI:SerializeSyncData(data)
         for _ in pairs(data.sessionData.players) do
             totalPlayersToSync = totalPlayersToSync + 1
         end
-        print("DEBUG: Total players to serialize: " .. totalPlayersToSync)
         
         for playerName, playerData in pairs(data.sessionData.players) do
             playerCount = playerCount + 1
-            print("DEBUG: [" .. playerCount .. "/" .. totalPlayersToSync .. "] Serializing player: " .. playerName .. " with total: " .. tostring(playerData.total))
             serialized = serialized .. playerName .. "=" .. (playerData.total or 0)
             
             -- Serialize penalties for this player
@@ -1235,18 +1209,14 @@ function UI:SerializeSyncData(data)
                     table.insert(penaltyStrings, penalty.reason .. ":" .. penalty.amount)
                 end
                 serialized = serialized .. ";" .. table.concat(penaltyStrings, ",")
-                print("DEBUG: Added " .. #penaltyStrings .. " penalties for " .. playerName)
             else
-                print("DEBUG: No penalties for " .. playerName)
             end
             serialized = serialized .. "#"
         end
         serialized = serialized .. "|"
-        print("DEBUG: Session data serialized successfully (" .. playerCount .. " players out of " .. totalPlayersToSync .. ")")
         
         -- Serialize season data
         if data.seasonData and data.seasonData.players then
-            print("DEBUG: Serializing season data...")
             serialized = serialized .. "SEASON:"
             for playerName, playerData in pairs(data.seasonData.players) do
                 serialized = serialized .. playerName .. "=" .. (playerData.totalAmount or 0) .. ";"
@@ -1257,35 +1227,27 @@ function UI:SerializeSyncData(data)
                 end
                 serialized = serialized .. "#"
             end
-            print("DEBUG: Season data serialized")
         else
-            print("DEBUG: No season data to serialize")
         end
         
-        print("DEBUG: Serialization completed, final length: " .. string.len(serialized))
         return serialized
     end)
     
     if success then
-        print("DEBUG: Serialization successful")
         return result
     else
-        print("DEBUG: Serialization failed with error: " .. tostring(result))
         return nil
     end
 end
 
 function UI:DeserializeSyncData(dataString)
-    print("DEBUG: DeserializeSyncData() called with message length: " .. string.len(dataString))
     
     -- Enhanced deserialization for comprehensive sync data
     local success, result = pcall(function()
-        print("DEBUG: Starting deserialization...")
         
         -- Check for compact format first
         local compactVersion = dataString:match("V:([^|]+)")
         if compactVersion then
-            print("DEBUG: Detected compact format, version: " .. compactVersion)
             return self:DeserializeCompactData(dataString)
         end
         
@@ -1294,10 +1256,8 @@ function UI:DeserializeSyncData(dataString)
         local timestamp = tonumber(dataString:match("TIMESTAMP:([^|]+)"))
         local sender = dataString:match("SENDER:([^|]+)")
         
-        print("DEBUG: Parsed basic info - Version: " .. tostring(version) .. ", Timestamp: " .. tostring(timestamp) .. ", Sender: " .. tostring(sender))
         
         if not version or not timestamp or not sender then
-            print("DEBUG: Missing basic info, returning nil")
             return nil
         end
         
@@ -1310,30 +1270,23 @@ function UI:DeserializeSyncData(dataString)
             seasonData = {players = {}}
         }
         
-        print("DEBUG: Parsing penalty configuration...")
         -- Parse penalty configuration (if present in v2.0+)
         local penaltiesSection = dataString:match("PENALTIES:([^|]+)")
         if penaltiesSection then
-            print("DEBUG: Found penalties section: " .. penaltiesSection)
             for penaltyBlock in penaltiesSection:gmatch("([^;]+)") do
                 if penaltyBlock ~= "" then
                     local reason, amount = penaltyBlock:match("([^=]+)=(.+)")
                     if reason and amount then
                         syncData.penaltyConfig[reason] = tonumber(amount) or 10000 -- Default 1g
-                        print("DEBUG: Added penalty config: " .. reason .. " = " .. tostring(amount))
                     end
                 end
             end
         else
-            print("DEBUG: No penalties section found")
         end
         
-        print("DEBUG: Parsing session data...")
         -- Parse session data
         local sessionSection = dataString:match("SESSION:([^|]+)")
         if sessionSection then
-            print("DEBUG: Found session section, length: " .. string.len(sessionSection))
-            print("DEBUG: Raw session section: " .. sessionSection)
             
             local playersParsed = 0
             local totalBlocks = 0
@@ -1342,24 +1295,20 @@ function UI:DeserializeSyncData(dataString)
             for _ in sessionSection:gmatch("([^#]+)") do
                 totalBlocks = totalBlocks + 1
             end
-            print("DEBUG: Total player blocks to parse: " .. totalBlocks)
             
             for playerBlock in sessionSection:gmatch("([^#]+)") do
                 if playerBlock ~= "" then
                     playersParsed = playersParsed + 1
-                    print("DEBUG: [" .. playersParsed .. "/" .. totalBlocks .. "] Processing block: '" .. playerBlock .. "'")
                     
                     local playerName, playerInfo = playerBlock:match("([^=]+)=(.+)")
                     if playerName and playerInfo then
                         local total = tonumber(playerInfo:match("^(%d+)"))
                         local penalties = {}
                         
-                        print("DEBUG: Successfully parsed player: '" .. playerName .. "' with total: " .. tostring(total))
                         
                         -- Parse penalties (if any)
                         local penaltiesSection = playerInfo:match(";(.+)")
                         if penaltiesSection then
-                            print("DEBUG: Found penalties for " .. playerName .. ": " .. penaltiesSection)
                             -- Split by commas and process penalty pairs
                             for penaltyPair in penaltiesSection:gmatch("([^,]+)") do
                                 if penaltyPair ~= "" then
@@ -1371,7 +1320,6 @@ function UI:DeserializeSyncData(dataString)
                                             timestamp = timestamp,
                                             uniqueId = timestamp .. "_" .. math.random(1000, 9999)
                                         })
-                                        print("DEBUG: Added penalty: " .. reason .. " = " .. amount)
                                     end
                                 end
                             end
@@ -1382,26 +1330,18 @@ function UI:DeserializeSyncData(dataString)
                             penalties = penalties,
                             class = nil -- Will be updated when player joins
                         }
-                        print("DEBUG: Successfully added session player: " .. playerName .. " with " .. #penalties .. " penalties")
                     else
-                        print("DEBUG: ERROR - Failed to parse player block: '" .. playerBlock .. "'")
-                        print("DEBUG: playerName: " .. tostring(playerName) .. ", playerInfo: " .. tostring(playerInfo))
                     end
                 else
-                    print("DEBUG: Skipping empty player block")
                 end
             end
             
-            print("DEBUG: Session parsing complete - processed " .. playersParsed .. " players")
         else
-            print("DEBUG: No session section found")
         end
         
-        print("DEBUG: Parsing season data...")
         -- Parse season data (if present)
         local seasonSection = dataString:match("SEASON:(.+)")
         if seasonSection then
-            print("DEBUG: Found season section, length: " .. string.len(seasonSection))
             for playerBlock in seasonSection:gmatch("([^#]+)") do
                 if playerBlock ~= "" then
                     local playerName, playerInfo = playerBlock:match("([^=]+)=(.+)")
@@ -1409,7 +1349,6 @@ function UI:DeserializeSyncData(dataString)
                         local total = tonumber(playerInfo:match("^(%d+)"))
                         local penalties = {}
                         
-                        print("DEBUG: Processing season player: " .. playerName .. ", total: " .. tostring(total))
                         
                         -- Parse season penalties (if any)
                         local penaltiesSection = playerInfo:match(";(.+)")
@@ -1440,29 +1379,23 @@ function UI:DeserializeSyncData(dataString)
                             penalties = penalties,
                             class = nil
                         }
-                        print("DEBUG: Added season player: " .. playerName .. " with " .. #penalties .. " penalties")
                     end
                 end
             end
         else
-            print("DEBUG: No season section found")
         end
         
-        print("DEBUG: Deserialization completed successfully")
         return syncData
     end)
     
     if success then
-        print("DEBUG: Deserialization successful")
         return result
     else
-        print("DEBUG: Deserialization failed with error: " .. tostring(result))
         return nil
     end
 end
 
 function UI:CreateCompactSyncData(syncData)
-    print("DEBUG: CreateCompactSyncData() called - creating ultra-compact version")
     
     -- Ultra-compact format: only players with penalties > 0 and basic penalty config
     local success, result = pcall(function()
@@ -1483,37 +1416,30 @@ function UI:CreateCompactSyncData(syncData)
                 
                 -- Stop at 20 players to stay under limit
                 if playerCount >= 20 then
-                    print("DEBUG: Limiting to 20 players to stay under 240 char limit")
                     break
                 end
             end
         end
         compact = compact .. "|"
         
-        print("DEBUG: Compact sync created, length: " .. string.len(compact) .. " chars")
-        print("DEBUG: Compact preview: " .. compact)
         return compact
     end)
     
     if success then
         return result
     else
-        print("DEBUG: Compact sync creation failed: " .. tostring(result))
         return nil
     end
 end
 
 function UI:DeserializeCompactData(dataString)
-    print("DEBUG: DeserializeCompactData() called for compact format")
     
     local success, result = pcall(function()
         local version = dataString:match("V:([^|]+)")
         local sender = dataString:match("S:([^|]+)")
         
-        print("DEBUG: Compact format - Version: " .. tostring(version) .. ", Sender: " .. tostring(sender))
         
         if not version or not sender then
-            print("DEBUG: Missing compact header info")
             return nil
         end
         
@@ -1529,13 +1455,11 @@ function UI:DeserializeCompactData(dataString)
         -- Parse compact penalty config
         local penaltiesSection = dataString:match("P:([^|]+)")
         if penaltiesSection then
-            print("DEBUG: Parsing compact penalties: " .. penaltiesSection)
             for penaltyBlock in penaltiesSection:gmatch("([^;]+)") do
                 if penaltyBlock ~= "" then
                     local reason, amount = penaltyBlock:match("([^=]+)=(.+)")
                     if reason and amount then
                         syncData.penaltyConfig[reason] = tonumber(amount)
-                        print("DEBUG: Compact penalty: " .. reason .. " = " .. amount)
                     end
                 end
             end
@@ -1544,7 +1468,6 @@ function UI:DeserializeCompactData(dataString)
         -- Parse compact player data
         local dataSection = dataString:match("D:([^|]+)")
         if dataSection then
-            print("DEBUG: Parsing compact player data: " .. dataSection)
             local playerCount = 0
             for playerBlock in dataSection:gmatch("([^;]+)") do
                 if playerBlock ~= "" then
@@ -1556,38 +1479,27 @@ function UI:DeserializeCompactData(dataString)
                             penalties = {},
                             class = nil
                         }
-                        print("DEBUG: Compact player " .. playerCount .. ": " .. playerName .. " = " .. total)
                     end
                 end
             end
-            print("DEBUG: Parsed " .. playerCount .. " players from compact format")
         end
         
         return syncData
     end)
     
     if success then
-        print("DEBUG: Compact deserialization successful")
         return result
     else
-        print("DEBUG: Compact deserialization failed: " .. tostring(result))
         return nil
     end
 end
 
 function UI:HandleSyncMessage(message, sender, distribution)
-    print("*** CRITICAL DEBUG: HandleSyncMessage() SHOULD NEVER BE CALLED FOR SELF! ***")
-    print("DEBUG: HandleSyncMessage() called from sender: " .. tostring(sender) .. ", distribution: " .. tostring(distribution))
-    print("DEBUG: Message length: " .. string.len(message))
-    print("DEBUG: Current player name: " .. tostring(UnitName("player")))
-    
     -- Emergency safety check - this should never happen now
     if sender == UnitName("player") then
-        print("*** EMERGENCY: Self message reached HandleSyncMessage - this is a bug! ***")
         return
     end
     
-    print("DEBUG: Calling DeserializeSyncData...")
     -- Deserialize the received data
     local syncData = self:DeserializeSyncData(message)
     if not syncData then
@@ -1595,24 +1507,19 @@ function UI:HandleSyncMessage(message, sender, distribution)
         return
     end
     
-    print("DEBUG: Sync data parsed successfully, showing confirmation dialog")
     -- Show confirmation dialog with proper data passing
     local popup = StaticPopup_Show("RAIDSANCTIONS_SYNC_CONFIRM", sender)
     if popup then
         popup.data = syncData -- Store syncData in the popup for OnAccept
-        print("DEBUG: Sync data stored in popup.data")
     else
         print("ERROR: Failed to show StaticPopup")
     end
 end
 
 function UI:HandleMultiSyncMessage(message, sender, distribution)
-    print("DEBUG: HandleMultiSyncMessage() called from sender: " .. tostring(sender))
-    print("DEBUG: Message: " .. message)
     
     -- Emergency safety check
     if sender == UnitName("player") then
-        print("DEBUG: Ignoring message from self")
         return
     end
     
@@ -1627,13 +1534,11 @@ function UI:HandleMultiSyncMessage(message, sender, distribution)
     local msgSender = message:match("S:([^|]+)")
     local timestamp = message:match("T:([^|]+)")
     
-    print("DEBUG: Message type: " .. tostring(messageType) .. ", Version: " .. tostring(version) .. ", Timestamp: " .. tostring(timestamp))
     
     -- Create session key
     local sessionKey = sender .. "_" .. (timestamp or "unknown")
     
     if messageType == "CFG:PENALTIES" then
-        print("DEBUG: Received penalty configuration message")
         if not self.multiSyncSessions[sessionKey] then
             self.multiSyncSessions[sessionKey] = {
                 sender = sender,
@@ -1657,24 +1562,19 @@ function UI:HandleMultiSyncMessage(message, sender, distribution)
                     local reason, amount = penaltyBlock:match("([^=]+)=(.+)")
                     if reason and amount then
                         session.penaltyConfig[reason] = tonumber(amount)
-                        print("DEBUG: Added penalty config: " .. reason .. " = " .. amount)
                     end
                 end
             end
         end
         
     elseif messageType == "CFG:SESSION_START" then
-        print("DEBUG: Received session start message")
         local playerCount = tonumber(message:match("COUNT:(%d+)"))
         if self.multiSyncSessions[sessionKey] then
             self.multiSyncSessions[sessionKey].expectedPlayers = playerCount or 0
-            print("DEBUG: Expecting " .. (playerCount or 0) .. " players")
         end
         
     elseif messageType == "BATCH" then
-        print("DEBUG: Received compressed player batch message")
         if not self.multiSyncSessions[sessionKey] then
-            print("DEBUG: No session found for batch message, creating one")
             self.multiSyncSessions[sessionKey] = {
                 sender = sender,
                 timestamp = timestamp,
@@ -1719,7 +1619,6 @@ function UI:HandleMultiSyncMessage(message, sender, distribution)
                         
                         -- Parse compressed penalties if present
                         if penaltiesCompressed then
-                            print("DEBUG: Parsing penalties for " .. playerName .. ": " .. penaltiesCompressed)
                             for penaltyCompact in penaltiesCompressed:gmatch("([^,]+)") do
                                 if penaltyCompact ~= "" then
                                     -- Parse: LAT10000000 -> reason=Late, amount=10000000
@@ -1743,26 +1642,20 @@ function UI:HandleMultiSyncMessage(message, sender, distribution)
                                             uniqueId = timestamp .. "_" .. math.random(1000, 9999)
                                         })
                                         
-                                        print("DEBUG: Added penalty: " .. fullReason .. " = " .. amount .. " for " .. playerName)
                                     else
-                                        print("DEBUG: Failed to parse penalty: " .. penaltyCompact)
                                     end
                                 end
                             end
                         end
                         
-                        print("DEBUG: Added player " .. playerName .. " from batch " .. batchIndex .. " with total: " .. total .. ", class: " .. class)
                     end
                 end
             end
             
-            print("DEBUG: Processed batch " .. batchIndex .. " with " .. playersInBatch .. " players (" .. session.receivedPlayers .. "/" .. session.expectedPlayers .. " total)")
         end
         
     elseif messageType == "PLAYER" then
-        print("DEBUG: Received individual player message (legacy format)")
         if not self.multiSyncSessions[sessionKey] then
-            print("DEBUG: No session found for player message, creating one")
             self.multiSyncSessions[sessionKey] = {
                 sender = sender,
                 timestamp = timestamp,
@@ -1809,11 +1702,9 @@ function UI:HandleMultiSyncMessage(message, sender, distribution)
                 end
             end
             
-            print("DEBUG: Added player " .. playerName .. " (" .. session.receivedPlayers .. "/" .. session.expectedPlayers .. ") with total: " .. total)
         end
         
     elseif messageType == "CFG:SESSION_END" then
-        print("DEBUG: Received session end message")
         local sentCount = tonumber(message:match("SENT:(%d+)"))
         local batchCount = tonumber(message:match("BATCHES:(%d+)"))
         
@@ -1821,7 +1712,6 @@ function UI:HandleMultiSyncMessage(message, sender, distribution)
             local session = self.multiSyncSessions[sessionKey]
             session.complete = true
             
-            print("DEBUG: Session complete! Received " .. session.receivedPlayers .. " players, sender reported " .. (sentCount or 0) .. " players in " .. (batchCount or 0) .. " batches")
             
             -- Convert to standard sync data format
             local syncData = {
@@ -1834,11 +1724,9 @@ function UI:HandleMultiSyncMessage(message, sender, distribution)
             }
             
             -- Show confirmation dialog
-            print("DEBUG: Showing sync confirmation dialog")
             local popup = StaticPopup_Show("RAIDSANCTIONS_SYNC_CONFIRM", sender)
             if popup then
                 popup.data = syncData
-                print("DEBUG: Multi-sync data stored in popup.data (" .. session.receivedPlayers .. " players from " .. (batchCount or 0) .. " compressed batches)")
             else
                 print("ERROR: Failed to show StaticPopup for multi-sync")
             end
@@ -1849,7 +1737,6 @@ function UI:HandleMultiSyncMessage(message, sender, distribution)
         
     else
         -- Fallback to old single-message handling
-        print("DEBUG: Unknown message type, falling back to old sync handler")
         self:HandleSyncMessage(message, sender, distribution)
     end
     
@@ -1857,14 +1744,11 @@ function UI:HandleMultiSyncMessage(message, sender, distribution)
     local currentTime = time()
     for key, session in pairs(self.multiSyncSessions or {}) do
         if currentTime - session.startTime > 30 then
-            print("DEBUG: Cleaning up old sync session: " .. key)
             self.multiSyncSessions[key] = nil
         elseif not session.complete and currentTime - session.startTime > 10 then
             -- Auto-complete sessions that haven't finished after 10 seconds
             if session.receivedPlayers > 0 and session.expectedPlayers > 0 then
                 local completionRate = (session.receivedPlayers / session.expectedPlayers) * 100
-                print("DEBUG: Auto-completing incomplete session " .. key .. " after timeout")
-                print("DEBUG: Completion rate: " .. session.receivedPlayers .. "/" .. session.expectedPlayers .. " (" .. string.format("%.1f", completionRate) .. "%)")
                 
                 if completionRate >= 40 then -- At least 40% received (was 25%, now higher for better data quality)
                     session.complete = true
@@ -1880,11 +1764,9 @@ function UI:HandleMultiSyncMessage(message, sender, distribution)
                     }
                     
                     -- Show confirmation dialog
-                    print("DEBUG: Showing sync confirmation dialog for incomplete session (" .. session.receivedPlayers .. " players)")
                     local popup = StaticPopup_Show("RAIDSANCTIONS_SYNC_CONFIRM", session.sender)
                     if popup then
                         popup.data = syncData
-                        print("DEBUG: Auto-completed sync data stored in popup.data")
                     else
                         print("ERROR: Failed to show StaticPopup for auto-completed sync")
                     end
@@ -1892,7 +1774,6 @@ function UI:HandleMultiSyncMessage(message, sender, distribution)
                     -- Clean up session
                     self.multiSyncSessions[key] = nil
                 else
-                    print("DEBUG: Dropping incomplete session with low completion rate: " .. string.format("%.1f", completionRate) .. "%")
                     self.multiSyncSessions[key] = nil
                 end
             end
@@ -1901,9 +1782,6 @@ function UI:HandleMultiSyncMessage(message, sender, distribution)
 end
 
 function UI:ApplySyncData(syncData)
-    print("DEBUG: ApplySyncData() called")
-    print("DEBUG: syncData type: " .. type(syncData))
-    print("DEBUG: syncData content: " .. tostring(syncData))
     
     -- Apply the comprehensive synchronized data
     if not syncData then
@@ -1920,23 +1798,19 @@ function UI:ApplySyncData(syncData)
             table.insert(itemsUpdated, "Penalty Settings")
             print("✓ Penalty configuration updated from " .. syncData.sender)
         else
-            print("DEBUG: RaidSanctions.Logic.SetCustomPenalties not available")
         end
     end
     
     -- 2. Apply session data
     if syncData.sessionData and syncData.sessionData.players then
-        print("DEBUG: Processing session data from sync...")
         
         local syncPlayerCount = 0
         for _ in pairs(syncData.sessionData.players) do
             syncPlayerCount = syncPlayerCount + 1
         end
-        print("DEBUG: Received " .. syncPlayerCount .. " players in sync data")
         
         -- List all received players
         for playerName, playerData in pairs(syncData.sessionData.players) do
-            print("DEBUG: Received player: " .. playerName .. " with total: " .. tostring(playerData.total))
         end
         
         local currentSession = nil
@@ -1952,7 +1826,6 @@ function UI:ApplySyncData(syncData)
         local updatedPlayers = 0
         
         for playerName, syncPlayerData in pairs(syncData.sessionData.players) do
-            print("DEBUG: Processing synced player: " .. playerName .. " with total: " .. tostring(syncPlayerData.total) .. ", class: " .. tostring(syncPlayerData.class))
             
             -- REPLACE player data completely (don't merge/add)
             currentSession.players[playerName] = {
@@ -1971,9 +1844,7 @@ function UI:ApplySyncData(syncData)
                         uniqueId = penalty.uniqueId
                     })
                 end
-                print("DEBUG: Replaced " .. playerName .. " with " .. #syncPlayerData.penalties .. " penalties, total: " .. tostring(syncPlayerData.total) .. ", class: " .. tostring(syncPlayerData.class))
             else
-                print("DEBUG: Replaced " .. playerName .. " with no penalties, total: " .. tostring(syncPlayerData.total) .. ", class: " .. tostring(syncPlayerData.class))
             end
             
             mergedPlayers = mergedPlayers + 1
@@ -1982,14 +1853,12 @@ function UI:ApplySyncData(syncData)
         -- Update the session
         if RaidSanctions.Logic and RaidSanctions.Logic.SetCurrentSession then
             RaidSanctions.Logic:SetCurrentSession(currentSession)
-            print("DEBUG: Current session updated with " .. mergedPlayers .. " players")
         else
             print("ERROR: RaidSanctions.Logic.SetCurrentSession not available")
         end
         
         if mergedPlayers > 0 then
             table.insert(itemsUpdated, "Session Data (" .. mergedPlayers .. " players synced)")
-            print("DEBUG: Successfully synced " .. mergedPlayers .. " players")
             
             -- Debug: List all players now in current session
             local sessionAfterUpdate = RaidSanctions.Logic:GetCurrentSession()
@@ -1997,9 +1866,7 @@ function UI:ApplySyncData(syncData)
                 local totalInSession = 0
                 for name, data in pairs(sessionAfterUpdate.players) do
                     totalInSession = totalInSession + 1
-                    print("DEBUG: Player in session after sync: " .. name .. " (total: " .. tostring(data.total) .. ", class: " .. tostring(data.class) .. ")")
                 end
-                print("DEBUG: Total players in session after sync: " .. totalInSession)
             end
         end
     end
@@ -2064,7 +1931,6 @@ function UI:ApplySyncData(syncData)
     end
     
     -- Refresh all UI elements
-    print("DEBUG: Starting UI refresh after sync...")
     
     -- Debug: Check current session before refresh
     local sessionBeforeRefresh = RaidSanctions.Logic:GetCurrentSession()
@@ -2073,20 +1939,14 @@ function UI:ApplySyncData(syncData)
         for name, data in pairs(sessionBeforeRefresh.players) do
             countBeforeRefresh = countBeforeRefresh + 1
         end
-        print("DEBUG: Session has " .. countBeforeRefresh .. " players before RefreshPlayerList")
     else
-        print("DEBUG: No session or no players before RefreshPlayerList")
     end
     
     self:RefreshPlayerList()
-    print("DEBUG: RefreshPlayerList() completed")
     
     if self.seasonStatsFrame and self.seasonStatsFrame:IsShown() then
-        print("DEBUG: Refreshing season frame...")
         self:RefreshSeasonPlayerList()
-        print("DEBUG: RefreshSeasonPlayerList() completed")
     else
-        print("DEBUG: Season frame not shown or doesn't exist")
     end
     
     -- Refresh penalty buttons if penalty config was updated
@@ -2550,22 +2410,18 @@ function UI:SetMainFrameButtonsEnabled(enabled)
 end
 
 function UI:SetToolbarButtonsEnabled(enabled)
-    print("DEBUG: SetToolbarButtonsEnabled() called with enabled: " .. tostring(enabled))
     
     if not mainFrame or not mainFrame.bottomPanel then
-        print("DEBUG: No mainFrame or bottomPanel available")
         return
     end
     
     -- Don't override popup window state
     if mainFrame.popupWindowOpen then
-        print("DEBUG: Popup window open, skipping toolbar update")
         return
     end
     
     -- Store references to toolbar buttons that require authorization
     if not mainFrame.toolbarButtons then
-        print("DEBUG: Finding toolbar buttons that require authorization")
         mainFrame.toolbarButtons = {}
         
         -- Find all buttons in bottom panel that require authorization
@@ -2583,7 +2439,6 @@ function UI:SetToolbarButtonsEnabled(enabled)
                     for _, restrictedText in ipairs(restrictedButtons) do
                         if buttonText:find(restrictedText) then
                             table.insert(mainFrame.toolbarButtons, frame)
-                            print("DEBUG: Found restricted button: " .. buttonText)
                             break
                         end
                     end
@@ -2598,11 +2453,9 @@ function UI:SetToolbarButtonsEnabled(enabled)
         end
         
         findToolbarButtons(mainFrame.bottomPanel)
-        print("DEBUG: Found " .. #mainFrame.toolbarButtons .. " restricted buttons")
     end
     
     -- Enable/disable toolbar buttons that require authorization
-    local buttonsUpdated = 0
     for _, button in ipairs(mainFrame.toolbarButtons) do
         if button:IsObjectType("Button") then
             button:SetEnabled(enabled)
@@ -2613,10 +2466,8 @@ function UI:SetToolbarButtonsEnabled(enabled)
                 button:SetAlpha(0.4) -- More transparent when disabled
                 button:GetFontString():SetTextColor(0.5, 0.5, 0.5) -- Gray out text
             end
-            buttonsUpdated = buttonsUpdated + 1
         end
     end
-    print("DEBUG: Updated " .. buttonsUpdated .. " toolbar buttons, enabled: " .. tostring(enabled))
 end
 
 function UI:RestoreButtonColors(button)
@@ -3086,21 +2937,15 @@ StaticPopupDialogs["RAIDSANCTIONS_SYNC_CONFIRM"] = {
     button1 = "Accept",
     button2 = "Decline",
     OnAccept = function(self, data)
-        print("DEBUG: StaticPopup OnAccept called")
-        print("DEBUG: self.data exists: " .. tostring(self.data ~= nil))
-        print("DEBUG: data param exists: " .. tostring(data ~= nil))
         
         -- In WoW StaticPopups, the extra data is stored in self.data
         local syncData = self.data
         if syncData then
-            print("DEBUG: Calling ApplySyncData with self.data")
-            print("DEBUG: syncData.sessionData exists: " .. tostring(syncData.sessionData ~= nil))
             if syncData.sessionData and syncData.sessionData.players then
                 local playerCount = 0
                 for name, playerData in pairs(syncData.sessionData.players) do
                     playerCount = playerCount + 1
                 end
-                print("DEBUG: syncData contains " .. playerCount .. " players")
             end
             UI:ApplySyncData(syncData)
         else
