@@ -382,6 +382,32 @@ function UI:CreateBottomPanel()
     mainFrame.bottomPanel = bottomPanel
 end
 
+function UI:HandleRaidStateChange()
+    -- Automatic session cleanup when joining a raid group
+    local currentlyInRaid = IsInRaid()
+    
+    -- Only trigger cleanup when joining a raid (not when leaving)
+    if currentlyInRaid and not self.wasInRaid then
+        -- Player just joined a raid group
+        print("RaidSanctions: Joined raid group - automatically resetting session data for new raid.")
+        
+        -- Reset session data (same logic as manual reset)
+        if RaidSanctions.Logic:ResetSession() then
+            print("RaidSanctions: Session data cleared for new raid.")
+            
+            -- Refresh UI if main frame is visible
+            if mainFrame and mainFrame:IsShown() then
+                self:RefreshPlayerList()
+            end
+        else
+            print("RaidSanctions: Error clearing session data.")
+        end
+    end
+    
+    -- Update stored raid state for next comparison
+    self.wasInRaid = currentlyInRaid
+end
+
 function UI:SetupEventHandlers()
     -- Note: No keyboard capture for main frame to allow normal gameplay
     -- ESC key handling is removed to allow normal ESC functionality in WoW
@@ -396,23 +422,32 @@ function UI:SetupEventHandlers()
     -- Register for addon communication (max 16 characters)
     C_ChatInfo.RegisterAddonMessagePrefix("RaidSanctions")
     
-    -- Set up addon message handler
+    -- Set up addon message handler and raid join detection
     self.syncEventFrame = CreateFrame("Frame", "RaidSanctionsSyncFrame")
     self.syncEventFrame:RegisterEvent("CHAT_MSG_ADDON")
+    self.syncEventFrame:RegisterEvent("GROUP_ROSTER_UPDATE") -- For raid join/leave detection
+    
+    -- Store previous raid state for comparison
+    self.wasInRaid = IsInRaid()
     
     self.syncEventFrame:SetScript("OnEvent", function(self, event, prefix, message, distribution, sender)
-        -- Ignore our own messages completely
-        local playerName = UnitName("player")
-        -- Also handle realm names (e.g., "Drodar-Eredar" vs "Drodar")
-        local senderName = sender:match("([^-]+)") or sender
-        local currentName = playerName:match("([^-]+)") or playerName
-        
-        if senderName == currentName then
-            return
-        end
-        
-        if event == "CHAT_MSG_ADDON" and prefix == "RaidSanctions" then
-            UI:HandleMultiSyncMessage(message, sender, distribution)
+        if event == "CHAT_MSG_ADDON" then
+            -- Ignore our own messages completely
+            local playerName = UnitName("player")
+            -- Also handle realm names (e.g., "Drodar-Eredar" vs "Drodar")
+            local senderName = sender:match("([^-]+)") or sender
+            local currentName = playerName:match("([^-]+)") or playerName
+            
+            if senderName == currentName then
+                return
+            end
+            
+            if prefix == "RaidSanctions" then
+                UI:HandleMultiSyncMessage(message, sender, distribution)
+            end
+        elseif event == "GROUP_ROSTER_UPDATE" then
+            -- Handle raid join detection for automatic session cleanup
+            UI:HandleRaidStateChange()
         end
     end)
 end
