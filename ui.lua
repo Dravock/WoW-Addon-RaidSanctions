@@ -14,12 +14,12 @@ local format = string.format
 local pairs, ipairs = pairs, ipairs
 
 -- UI Constants
-local FRAME_WIDTH = 900  -- Increased from 800 to 900
+local FRAME_WIDTH = 1000  -- Increased from 900 to 1000 to accommodate wider button layout
 local FRAME_HEIGHT = 700  -- More height for bottom button bar
 local ROW_HEIGHT = 30
 local BUTTON_WIDTH = 80
 local BUTTON_HEIGHT = 25
-local BOTTOM_PANEL_HEIGHT = 110  -- More height for two button rows
+local BOTTOM_PANEL_HEIGHT = 140  -- Increased from 110 to 140 for additional penalty button row
 
 -- Local UI variables
 local mainFrame = nil
@@ -129,28 +129,30 @@ function UI:CreateHeader()
     headerFrame:SetSize(FRAME_WIDTH - 20, 25)
     headerFrame:SetPoint("TOPLEFT", 10, -50)
     
-    -- Player name label
+    -- Player name label (more space)
     local nameHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     nameHeader:SetPoint("LEFT", 5, 0)
     nameHeader:SetText("Player")
     nameHeader:SetTextColor(0.8, 0.8, 0.8)
+    nameHeader:SetWidth(200) -- Increased from implicit width for better spacing
+    nameHeader:SetJustifyH("LEFT") -- Left aligned
     
-    -- Create penalty headers dynamically (now as counter)
-    local xOffset = 150
+    -- Create penalty headers dynamically (wider spacing)
+    local xOffset = 210 -- Increased from 150 to give more room for player names
     for reason, amount in pairs(RaidSanctions.Logic:GetPenalties()) do
         local header = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         header:SetPoint("LEFT", xOffset, 0)
         header:SetText(reason) -- Nur Penalty-Name, Counter kommen in die Zeilen
         header:SetTextColor(0.8, 0.8, 0.8)
-        header:SetWidth(BUTTON_WIDTH) -- Set width for centering
+        header:SetWidth(100) -- Increased from BUTTON_WIDTH for better readability
         header:SetJustifyH("CENTER") -- Centered alignment
         headerButtons[reason] = header
-        xOffset = xOffset + (BUTTON_WIDTH + 15)
+        xOffset = xOffset + 110 -- Increased spacing from (BUTTON_WIDTH + 15) to 110
     end
     
-    -- Total header
+    -- Total header (positioned more to the left)
     local totalHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    totalHeader:SetPoint("RIGHT", -10, 0)
+    totalHeader:SetPoint("LEFT", xOffset + 20, 0) -- Position based on calculated xOffset instead of RIGHT
     totalHeader:SetText("Total")
     totalHeader:SetTextColor(0.8, 0.8, 0.8)
     totalHeader:SetWidth(120) -- Set width for centering
@@ -202,12 +204,30 @@ function UI:CreateBottomPanel()
     selectedPlayerLabel:SetTextColor(0.8, 0.8, 0.8)
     mainFrame.selectedPlayerLabel = selectedPlayerLabel -- Store reference for updates
     
-    -- ERSTE REIHE: Penalty-Buttons
-    local xOffset = 10
-    local yOffset = -30
-    for reason, amount in pairs(RaidSanctions.Logic:GetPenalties()) do
+    -- ERSTE REIHE: Penalty-Buttons (2 Reihen mit je 4 Button-Paaren)
+    local penalties = RaidSanctions.Logic:GetPenalties()
+    local penaltyList = {}
+    for reason, amount in pairs(penalties) do
+        table.insert(penaltyList, {reason = reason, amount = amount})
+    end
+    
+    local buttonsPerRow = 4
+    local buttonIndex = 0
+    
+    for i, penaltyData in ipairs(penaltyList) do
+        local reason = penaltyData.reason
+        local amount = penaltyData.amount
+        
+        -- Calculate position (2 rows, 4 buttons each)
+        local row = math.floor(buttonIndex / buttonsPerRow)
+        local col = buttonIndex % buttonsPerRow
+        
+        local xOffset = 10 + col * 220  -- 220 pixels spacing between button pairs
+        local yOffset = -30 - row * 30   -- 30 pixels between rows
+        
+        -- Main penalty button (add penalty) - made wider
         local button = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-        button:SetSize(160, BUTTON_HEIGHT) -- Increased from 140 to 160
+        button:SetSize(190, BUTTON_HEIGHT) -- Increased from 140 to 190 to fit text better
         button:SetPoint("TOPLEFT", xOffset, yOffset)
         button:SetText(reason .. " (" .. RaidSanctions.Logic:FormatGold(amount) .. ")")
         
@@ -228,21 +248,41 @@ function UI:CreateBottomPanel()
             GameTooltip:Hide()
         end)
         
-        xOffset = xOffset + 170 -- Increased spacing from 150 to 170
-        if xOffset > FRAME_WIDTH - 180 then -- Adjusted break point from 160 to 180
-            xOffset = 10
-            yOffset = yOffset - 30
-        end
+        -- Minus button (remove penalty) - positioned right next to the main button
+        local minusButton = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
+        minusButton:SetSize(25, BUTTON_HEIGHT) -- Slightly wider minus button
+        minusButton:SetPoint("LEFT", button, "RIGHT", 2, 0) -- 2 pixels gap
+        minusButton:SetText("-")
+        minusButton:GetFontString():SetTextColor(1, 0.3, 0.3) -- Reddish color
+        
+        -- Click handler for removing penalty
+        minusButton:SetScript("OnClick", function()
+            UI:RemovePenaltyFromSelectedPlayer(reason, amount)
+        end)
+        
+        -- Tooltip for minus button
+        minusButton:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText("Remove penalty: " .. reason)
+            GameTooltip:AddLine("Amount: " .. RaidSanctions.Logic:FormatGold(amount))
+            GameTooltip:AddLine("Click to remove this penalty from the selected player.", 1, 1, 1)
+            GameTooltip:Show()
+        end)
+        minusButton:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        
+        buttonIndex = buttonIndex + 1
     end
     
-    -- "Management:" label for second row
+    -- "Management:" label for third row (after 2 penalty button rows)
     local managementLabel = bottomPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    managementLabel:SetPoint("TOPLEFT", 10, -60)
+    managementLabel:SetPoint("TOPLEFT", 10, -95) -- Moved down from -60 to -95
     managementLabel:SetText("Management:")
     managementLabel:SetTextColor(1, 0.8, 0)
     
-    -- SECOND ROW: Management Buttons
-    local managementYOffset = -80
+    -- THIRD ROW: Management Buttons (moved down)
+    local managementYOffset = -115 -- Moved down from -80 to -115
     
     -- "Paid" Button
     local paidButton = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
@@ -622,10 +662,12 @@ function UI:CreatePlayerRow(playerName, playerData, yOffset)
         UI:SelectPlayer(playerName)
     end)
     
-    -- Player name with class color
+    -- Player name with class color (more space)
     local nameLabel = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     nameLabel:SetPoint("LEFT", 5, 0)
     nameLabel:SetText(playerName)
+    nameLabel:SetWidth(200) -- Match header width
+    nameLabel:SetJustifyH("LEFT") -- Left aligned
     
     -- Klassenfarbe anwenden
     if playerData.class then
@@ -635,12 +677,12 @@ function UI:CreatePlayerRow(playerName, playerData, yOffset)
         end
     end
     
-    -- Penalty-Counter (statt Buttons)
-    local xOffset = 150
+    -- Penalty-Counter (wider spacing to match header)
+    local xOffset = 210 -- Match header starting position
     for reason, amount in pairs(RaidSanctions.Logic:GetPenalties()) do
         local counter = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         counter:SetPoint("LEFT", xOffset, 0)
-        counter:SetWidth(BUTTON_WIDTH)
+        counter:SetWidth(100) -- Match header width
         counter:SetJustifyH("CENTER")
         
         -- Calculate counter value
@@ -666,15 +708,15 @@ function UI:CreatePlayerRow(playerName, playerData, yOffset)
             counter:SetTextColor(0.8, 0.8, 0.8) -- Grau
         end
         
-        xOffset = xOffset + (BUTTON_WIDTH + 15)
+        xOffset = xOffset + 110 -- Match header spacing
     end
     
-    -- Total display
+    -- Total display (positioned to match header)
     local totalLabel = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    totalLabel:SetPoint("RIGHT", -10, 0)
+    totalLabel:SetPoint("LEFT", xOffset + 20, 0) -- Match header position
     totalLabel:SetText(RaidSanctions.Logic:FormatGold(playerData.total))
     totalLabel:SetWidth(120)
-    totalLabel:SetJustifyH("RIGHT")
+    totalLabel:SetJustifyH("CENTER") -- Center align to match header
     
     -- Color based on penalty amount
     if playerData.total > 50000 then -- > 5g
@@ -724,10 +766,12 @@ function UI:CreateSeasonPlayerRow(playerName, playerData, yOffset, parentFrame)
         bg:SetColorTexture(0.1, 0.1, 0.1, 0.2)
     end
     
-    -- Player name with class color
+    -- Player name with class color (more space)
     local nameLabel = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     nameLabel:SetPoint("LEFT", 5, 0)
     nameLabel:SetText(playerName)
+    nameLabel:SetWidth(200) -- Match main window
+    nameLabel:SetJustifyH("LEFT") -- Left aligned
     
     -- Apply class color if available
     if playerData.class then
@@ -737,12 +781,12 @@ function UI:CreateSeasonPlayerRow(playerName, playerData, yOffset, parentFrame)
         end
     end
     
-    -- Penalty-Counter (same as main window)
-    local xOffset = 150
+    -- Penalty-Counter (same spacing as main window)
+    local xOffset = 210 -- Match main window
     for reason, amount in pairs(RaidSanctions.Logic:GetPenalties()) do
         local counter = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         counter:SetPoint("LEFT", xOffset, 0)
-        counter:SetWidth(BUTTON_WIDTH)
+        counter:SetWidth(100) -- Match main window
         counter:SetJustifyH("CENTER")
         
         -- Calculate counter value from season data
@@ -768,15 +812,15 @@ function UI:CreateSeasonPlayerRow(playerName, playerData, yOffset, parentFrame)
             counter:SetTextColor(0.8, 0.8, 0.8) -- Gray
         end
         
-        xOffset = xOffset + (BUTTON_WIDTH + 15)
+        xOffset = xOffset + 110 -- Match main window
     end
     
-    -- Total display
+    -- Total display (positioned to match main window)
     local totalLabel = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    totalLabel:SetPoint("RIGHT", -10, 0)
+    totalLabel:SetPoint("LEFT", xOffset + 20, 0) -- Match main window position
     totalLabel:SetText(RaidSanctions.Logic:FormatGold(playerData.totalAmount))
     totalLabel:SetWidth(120)
-    totalLabel:SetJustifyH("RIGHT")
+    totalLabel:SetJustifyH("CENTER") -- Center align to match main window
     
     -- Color based on penalty amount
     if playerData.totalAmount > 50000 then -- > 5g
@@ -908,6 +952,27 @@ function UI:ApplyPenaltyToSelectedPlayer(reason, amount)
         self:SelectPlayer(selectedPlayer)
     else
         print("Error applying penalty to " .. selectedPlayer .. ".")
+    end
+end
+
+function UI:RemovePenaltyFromSelectedPlayer(reason, amount)
+    -- Check authorization first (button should be disabled, but double-check)
+    if not self:IsPlayerAuthorized() then
+        return
+    end
+    
+    if not selectedPlayer then
+        print("No player selected! Click on a player in the list first.")
+        return
+    end
+    
+    if RaidSanctions.Logic:RemovePenalty(selectedPlayer, reason, amount) then
+        print("Removed penalty '" .. reason .. "' from " .. selectedPlayer)
+        self:RefreshPlayerList()
+        -- Reselect the player after refresh to maintain selection
+        self:SelectPlayer(selectedPlayer)
+    else
+        print("Error removing penalty from " .. selectedPlayer .. " (no penalty found).")
     end
 end
 
@@ -2433,7 +2498,7 @@ function UI:SetToolbarButtonsEnabled(enabled)
                     -- These buttons require authorization
                     local restrictedButtons = {
                         "Wrong Gear", "Wrong Tactic", "Late", "Disruption", "AFK",
-                        "Paid", "Post Stats in Raid Chat", "Sync Session"
+                        "Paid", "Post Stats in Raid Chat", "Sync Session", "-"
                     }
                     
                     for _, restrictedText in ipairs(restrictedButtons) do
@@ -2482,6 +2547,8 @@ function UI:RestoreButtonColors(button)
             button:GetFontString():SetTextColor(1, 0.8, 0.2) -- Gold
         elseif buttonText:find("Sync Session") then
             button:GetFontString():SetTextColor(0.2, 1, 1) -- Cyan
+        elseif buttonText == "-" then
+            button:GetFontString():SetTextColor(1, 0.3, 0.3) -- Reddish for minus buttons
         else
             -- Penalty buttons (white text)
             button:GetFontString():SetTextColor(1, 1, 1) -- White text

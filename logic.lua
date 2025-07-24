@@ -230,6 +230,41 @@ function Logic:ApplyPenalty(playerName, reason, amount)
     return true
 end
 
+function Logic:RemovePenalty(playerName, reason, amount)
+    local session = self:GetCurrentSession()
+    if not session or not session.players[playerName] then
+        return false
+    end
+    
+    local player = session.players[playerName]
+    
+    -- Find and remove the most recent penalty of this type
+    for i = #player.penalties, 1, -1 do
+        local penalty = player.penalties[i]
+        if penalty.reason == reason and penalty.amount == amount then
+            -- Remove the penalty
+            table.remove(player.penalties, i)
+            player.total = math.max(0, player.total - amount) -- Ensure total doesn't go negative
+            
+            -- Update season data automatically
+            self:UpdateSeasonData()
+            
+            -- Feedback
+            print("Removed penalty '" .. reason .. "' from " .. playerName .. " (-" .. self:FormatGold(amount) .. ")")
+            
+            -- Play sound if enabled
+            if RaidSanctionsDB.settings.soundEnabled then
+                PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
+            end
+            
+            return true
+        end
+    end
+    
+    -- No matching penalty found
+    return false
+end
+
 function Logic:GetPlayerTotal(playerName)
     local session = self:GetCurrentSession()
     if session and session.players[playerName] then
