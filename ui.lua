@@ -27,6 +27,12 @@ local playerRows = {}
 local headerButtons = {}
 local selectedPlayer = nil
 
+-- Live Sync System Variables
+local liveSyncEnabled = false
+local isLiveSyncHost = false
+local liveSyncParticipants = {}
+local lastSyncTimestamp = 0
+
 function UI:Initialize()
     if mainFrame then
         return -- Already initialized
@@ -37,6 +43,13 @@ function UI:Initialize()
     self:CreateScrollFrame()
     self:CreateBottomPanel()
     self:SetupEventHandlers()
+    
+    -- Auto-initialize live sync if already in a group
+    C_Timer.After(2.0, function()
+        if IsInRaid() or IsInGroup() then
+            self:InitializeLiveSync()
+        end
+    end)
 end
 
 function UI:CreateMainFrame()
@@ -350,28 +363,36 @@ function UI:CreateBottomPanel()
         GameTooltip:Hide()
     end)
     
-    -- "Sync Session" Button
-    local syncButton = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-    syncButton:SetSize(100, BUTTON_HEIGHT)
-    syncButton:SetPoint("TOPLEFT", 460, managementYOffset)
-    syncButton:SetText("Sync Session")
-    syncButton:GetFontString():SetTextColor(0.2, 1, 1) -- Cyan
+    -- "Live Sync" Toggle Button
+    local liveSyncButton = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
+    liveSyncButton:SetSize(100, BUTTON_HEIGHT)
+    liveSyncButton:SetPoint("TOPLEFT", 460, managementYOffset)
+    liveSyncButton:SetText("Live Sync: OFF")
+    liveSyncButton:GetFontString():SetTextColor(0.8, 0.8, 0.8) -- Gray when off
     
-    syncButton:SetScript("OnClick", function()
-        UI:SyncSessionData()
+    liveSyncButton:SetScript("OnClick", function()
+        UI:ToggleLiveSync()
     end)
     
-    syncButton:SetScript("OnEnter", function(self)
+    liveSyncButton:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText("Synchronize Complete Data")
-        GameTooltip:AddLine("Shares your current session data, penalty settings, and season statistics.", 1, 1, 1)
-        GameTooltip:AddLine("Other players with RaidSanctions will receive all your data.", 0.8, 0.8, 0.8)
-        GameTooltip:AddLine("Requires raid leader or assistant permissions.", 1, 0.8, 0.2)
+        if UI:IsLiveSyncActive() then
+            GameTooltip:SetText("Live Sync: ACTIVE")
+            GameTooltip:AddLine("All penalty changes are automatically shared with the group.", 1, 1, 1)
+            GameTooltip:AddLine("Click to disable live sync.", 0.8, 0.8, 0.8)
+        else
+            GameTooltip:SetText("Live Sync: INACTIVE")
+            GameTooltip:AddLine("Enable automatic sharing of penalty changes.", 1, 1, 1)
+            GameTooltip:AddLine("Click to enable live sync (requires leader permissions).", 0.8, 0.8, 0.8)
+        end
         GameTooltip:Show()
     end)
-    syncButton:SetScript("OnLeave", function()
+    liveSyncButton:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
+    
+    -- Store reference for updates
+    mainFrame.liveSyncButton = liveSyncButton
     
     -- "Send Penalty Mails" Button (Guild Master only)
     local sendMailsButton = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
@@ -428,6 +449,16 @@ function UI:HandleRaidStateChange()
         else
             print("RaidSanctions: Error clearing session data.")
         end
+        
+        -- Auto-initialize live sync for new raid
+        C_Timer.After(1.0, function()
+            self:InitializeLiveSync()
+        end)
+    end
+    
+    -- Handle leaving raid - stop live sync
+    if not currentlyInRaid and self.wasInRaid then
+        self:StopLiveSync()
     end
     
     -- Update stored raid state for next comparison
@@ -657,6 +688,9 @@ function UI:UpdateAuthorizationStatus(isAuthorized)
     
     -- Update Send Penalty Mails button based on Guild Master status
     self:UpdateSendMailsButtonStatus()
+    
+    -- Update Live Sync button status
+    self:UpdateLiveSyncButtonStatus()
 end
 
 function UI:UpdateSendMailsButtonStatus()
@@ -1046,6 +1080,14 @@ function UI:ApplyPenaltyToSelectedPlayer(reason, amount)
         self:RefreshPlayerList()
         -- Reselect the player after refresh to maintain selection
         self:SelectPlayer(selectedPlayer)
+        
+        -- Auto-send live sync update if enabled
+        self:SendLiveSyncUpdate("PENALTY_ADD", {
+            player = selectedPlayer,
+            reason = reason,
+            amount = amount,
+            timestamp = time()
+        })
     else
         print("Error applying penalty to " .. selectedPlayer .. ".")
     end
@@ -1067,6 +1109,14 @@ function UI:RemovePenaltyFromSelectedPlayer(reason, amount)
         self:RefreshPlayerList()
         -- Reselect the player after refresh to maintain selection
         self:SelectPlayer(selectedPlayer)
+        
+        -- Auto-send live sync update if enabled
+        self:SendLiveSyncUpdate("PENALTY_REMOVE", {
+            player = selectedPlayer,
+            reason = reason,
+            amount = amount,
+            timestamp = time()
+        })
     else
         print("Error removing penalty from " .. selectedPlayer .. " (no penalty found).")
     end
@@ -1678,9 +1728,14 @@ function UI:HandleSyncMessage(message, sender, distribution)
 end
 
 function UI:HandleMultiSyncMessage(message, sender, distribution)
-    
     -- Emergency safety check
     if sender == UnitName("player") then
+        return
+    end
+    
+    -- Check for live sync messages first
+    if message:match("^LIVE_SYNC_START") or message:match("^LIVE_UPDATE") or message:match("^LIVE_SYNC_JOIN") then
+        self:HandleLiveSyncMessage(message, sender, distribution)
         return
     end
     
@@ -3139,6 +3194,16 @@ StaticPopupDialogs["RAIDSANCTIONS_RESET_CONFIRM"] = {
     OnAccept = function()
         Logic:ResetSessionData()
         UI:RefreshPlayerList()
+        
+        -- Send live sync notification about reset
+        if UI:IsLiveSyncActive() then
+            UI:SendLiveSyncUpdate("SESSION_RESET", {
+                player = "ALL",
+                reason = "RESET",
+                amount = 0,
+                timestamp = time()
+            })
+        end
     end,
     timeout = 0,
     whileDead = true,
@@ -3189,7 +3254,16 @@ StaticPopupDialogs["RAIDSANCTIONS_PLAYER_PAID_CONFIRM"] = {
     button2 = "Cancel",
     OnAccept = function()
         if Logic:ResetPlayerPenalties(selectedPlayer) then
+            print("Player " .. selectedPlayer .. " marked as paid - all penalties reset.")
             UI:RefreshPlayerList()
+            
+            -- Auto-send live sync update if enabled
+            UI:SendLiveSyncUpdate("PLAYER_PAID", {
+                player = selectedPlayer,
+                reason = "PAID",
+                amount = 0,
+                timestamp = time()
+            })
         else
             print("Error resetting player penalties.")
         end
@@ -3271,6 +3345,229 @@ StaticPopupDialogs["RAIDSANCTIONS_SEND_MAILS_CONFIRM"] = {
     hideOnEscape = true,
     preferredIndex = 3,
 }
+
+function UI:ToggleLiveSync()
+    if not self:IsPlayerAuthorized() then
+        print("Error: You must be raid leader or raid assistant to control live sync.")
+        return
+    end
+    
+    if liveSyncEnabled then
+        self:StopLiveSync()
+    else
+        self:InitializeLiveSync()
+    end
+    
+    -- Update button appearance
+    self:UpdateLiveSyncButtonStatus()
+end
+
+function UI:UpdateLiveSyncButtonStatus()
+    if not mainFrame or not mainFrame.liveSyncButton then
+        return
+    end
+    
+    local button = mainFrame.liveSyncButton
+    
+    if liveSyncEnabled then
+        if isLiveSyncHost then
+            button:SetText("Live Sync: HOST")
+            button:GetFontString():SetTextColor(0.2, 1, 0.2) -- Green for host
+        else
+            button:SetText("Live Sync: ON")
+            button:GetFontString():SetTextColor(0.2, 1, 1) -- Cyan for participant
+        end
+    else
+        button:SetText("Live Sync: OFF")
+        button:GetFontString():SetTextColor(0.8, 0.8, 0.8) -- Gray when off
+    end
+end
+
+-- ========================================
+-- LIVE SYNC SYSTEM
+-- ========================================
+
+function UI:InitializeLiveSync()
+    -- Auto-start live sync when joining a raid/group as leader
+    local isLeader = UnitIsGroupLeader("player")
+    local inGroup = IsInRaid() or IsInGroup()
+    
+    if isLeader and inGroup then
+        self:StartLiveSyncAsHost()
+    elseif inGroup then
+        liveSyncEnabled = true
+        print("RaidSanctions: Live sync ready - waiting for host.")
+    end
+end
+
+function UI:StartLiveSyncAsHost()
+    liveSyncEnabled = true
+    isLiveSyncHost = true
+    liveSyncParticipants = {}
+    lastSyncTimestamp = time()
+    
+    print("RaidSanctions: Live sync started as HOST. All penalty changes will be automatically shared.")
+    
+    -- Update button status
+    self:UpdateLiveSyncButtonStatus()
+    
+    -- Send initial sync to establish connection
+    self:SendLiveSyncAnnouncement()
+end
+
+function UI:SendLiveSyncAnnouncement()
+    if not liveSyncEnabled or not isLiveSyncHost then
+        return
+    end
+    
+    local channel = IsInRaid() and "RAID" or "PARTY"
+    local message = "LIVE_SYNC_START|HOST:" .. UnitName("player") .. "|T:" .. time()
+    
+    C_ChatInfo.SendAddonMessage("RaidSanctions", message, channel)
+end
+
+function UI:SendLiveSyncUpdate(actionType, data)
+    if not liveSyncEnabled or not self:IsPlayerAuthorized() then
+        return
+    end
+    
+    local channel = IsInRaid() and "RAID" or "PARTY"
+    local sender = UnitName("player")
+    local timestamp = time()
+    
+    -- Create compact live sync message
+    local message = "LIVE_UPDATE|ACTION:" .. actionType .. "|SENDER:" .. sender .. "|T:" .. timestamp
+    message = message .. "|PLAYER:" .. data.player
+    message = message .. "|REASON:" .. data.reason
+    message = message .. "|AMOUNT:" .. data.amount
+    
+    C_ChatInfo.SendAddonMessage("RaidSanctions", message, channel)
+    lastSyncTimestamp = timestamp
+end
+
+function UI:HandleLiveSyncMessage(message, sender, distribution)
+    -- Ignore own messages
+    if sender == UnitName("player") then
+        return
+    end
+    
+    -- Parse message type
+    if message:match("^LIVE_SYNC_START") then
+        self:HandleLiveSyncStart(message, sender)
+    elseif message:match("^LIVE_UPDATE") then
+        self:HandleLiveSyncUpdate(message, sender)
+    elseif message:match("^LIVE_SYNC_JOIN") then
+        self:HandleLiveSyncJoin(message, sender)
+    end
+end
+
+function UI:HandleLiveSyncStart(message, sender)
+    local host = message:match("HOST:([^|]+)")
+    local timestamp = tonumber(message:match("T:([^|]+)"))
+    
+    if host and timestamp then
+        liveSyncEnabled = true
+        isLiveSyncHost = false
+        
+        print("RaidSanctions: Live sync session joined - Host: " .. host)
+        
+        -- Update button status
+        self:UpdateLiveSyncButtonStatus()
+        
+        -- Send join confirmation
+        self:SendLiveSyncJoinConfirmation()
+    end
+end
+
+function UI:HandleLiveSyncUpdate(message, sender)
+    if not liveSyncEnabled then
+        return
+    end
+    
+    -- Parse update data
+    local actionType = message:match("ACTION:([^|]+)")
+    local timestamp = tonumber(message:match("T:([^|]+)"))
+    local playerName = message:match("PLAYER:([^|]+)")
+    local reason = message:match("REASON:([^|]+)")
+    local amount = tonumber(message:match("AMOUNT:([^|]+)"))
+    
+    if not actionType or not timestamp or not playerName or not reason or not amount then
+        return
+    end
+    
+    -- Ignore old updates
+    if timestamp <= lastSyncTimestamp then
+        return
+    end
+    
+    -- Apply the penalty change locally
+    if actionType == "PENALTY_ADD" then
+        if RaidSanctions.Logic:ApplyPenalty(playerName, reason, amount) then
+            print("Live Sync: Applied penalty '" .. reason .. "' to " .. playerName .. " (from " .. sender .. ")")
+        end
+    elseif actionType == "PENALTY_REMOVE" then
+        if RaidSanctions.Logic:RemovePenalty(playerName, reason, amount) then
+            print("Live Sync: Removed penalty '" .. reason .. "' from " .. playerName .. " (from " .. sender .. ")")
+        end
+    elseif actionType == "PLAYER_PAID" then
+        if RaidSanctions.Logic:ResetPlayerPenalties(playerName) then
+            print("Live Sync: Player " .. playerName .. " marked as paid (from " .. sender .. ")")
+        end
+    elseif actionType == "SESSION_RESET" then
+        if RaidSanctions.Logic:ResetSessionData() then
+            print("Live Sync: Session data reset by " .. sender)
+        end
+    end
+    
+    -- Update UI if visible
+    if mainFrame and mainFrame:IsShown() then
+        self:RefreshPlayerList()
+    end
+    
+    lastSyncTimestamp = timestamp
+end
+
+function UI:SendLiveSyncJoinConfirmation()
+    if not liveSyncEnabled then
+        return
+    end
+    
+    local channel = IsInRaid() and "RAID" or "PARTY"
+    local message = "LIVE_SYNC_JOIN|PARTICIPANT:" .. UnitName("player") .. "|T:" .. time()
+    
+    C_ChatInfo.SendAddonMessage("RaidSanctions", message, channel)
+end
+
+function UI:HandleLiveSyncJoin(message, sender)
+    if not isLiveSyncHost then
+        return
+    end
+    
+    local participant = message:match("PARTICIPANT:([^|]+)")
+    if participant then
+        liveSyncParticipants[participant] = time()
+        print("Live Sync: " .. participant .. " joined the session.")
+    end
+end
+
+function UI:StopLiveSync()
+    liveSyncEnabled = false
+    isLiveSyncHost = false
+    liveSyncParticipants = {}
+    
+    -- Update button status
+    self:UpdateLiveSyncButtonStatus()
+    
+    print("RaidSanctions: Live sync stopped.")
+end
+
+function UI:IsLiveSyncActive()
+    return liveSyncEnabled
+end
+
+-- ========================================
+-- END LIVE SYNC SYSTEM
+-- ========================================
 
 -- Export
 RaidSanctions.UI = UI
