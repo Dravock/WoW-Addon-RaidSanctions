@@ -1116,21 +1116,24 @@ function UI:ApplyPenaltyToSelectedPlayer(reason, amount)
         return
     end
     
-    if RaidSanctions.Logic:ApplyPenalty(selectedPlayer, reason, amount) then
-        print("Applied penalty '" .. reason .. "' to " .. selectedPlayer)
+    -- Store the selected player locally to avoid issues with refreshing
+    local playerToApplyPenalty = selectedPlayer
+    
+    if RaidSanctions.Logic:ApplyPenalty(playerToApplyPenalty, reason, amount) then
+        print("Applied penalty '" .. reason .. "' to " .. playerToApplyPenalty)
         self:RefreshPlayerList()
         -- Reselect the player after refresh to maintain selection
-        self:SelectPlayer(selectedPlayer)
+        self:SelectPlayer(playerToApplyPenalty)
         
         -- Auto-send live sync update if enabled
         self:SendLiveSyncUpdate("PENALTY_ADD", {
-            player = selectedPlayer,
+            player = playerToApplyPenalty,
             reason = reason,
             amount = amount,
             timestamp = time()
         })
     else
-        print("Error applying penalty to " .. selectedPlayer .. ".")
+        print("Error applying penalty to " .. playerToApplyPenalty .. ".")
     end
 end
 
@@ -1145,21 +1148,24 @@ function UI:RemovePenaltyFromSelectedPlayer(reason, amount)
         return
     end
     
-    if RaidSanctions.Logic:RemovePenalty(selectedPlayer, reason, amount) then
-        print("Removed penalty '" .. reason .. "' from " .. selectedPlayer)
+    -- Store the selected player locally to avoid issues with refreshing
+    local playerToRemovePenalty = selectedPlayer
+    
+    if RaidSanctions.Logic:RemovePenalty(playerToRemovePenalty, reason, amount) then
+        print("Removed penalty '" .. reason .. "' from " .. playerToRemovePenalty)
         self:RefreshPlayerList()
         -- Reselect the player after refresh to maintain selection
-        self:SelectPlayer(selectedPlayer)
+        self:SelectPlayer(playerToRemovePenalty)
         
         -- Auto-send live sync update if enabled
         self:SendLiveSyncUpdate("PENALTY_REMOVE", {
-            player = selectedPlayer,
+            player = playerToRemovePenalty,
             reason = reason,
             amount = amount,
             timestamp = time()
         })
     else
-        print("Error removing penalty from " .. selectedPlayer .. " (no penalty found).")
+        print("Error removing penalty from " .. playerToRemovePenalty .. " (no penalty found).")
     end
 end
 
